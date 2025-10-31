@@ -51,6 +51,6 @@ export class CheckVocaDB extends Dexie {
 export const db = new CheckVocaDB();
 
 // 개발 환경에서 디버깅을 위한 전역 노출
-if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+if (typeof window !== 'undefined') {
   (window as unknown as { db: CheckVocaDB }).db = db;
 }

@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta charset="UTF-8">
+  <title>CatchVoca - Mobile Quiz</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 1rem;
+      color: #1f2937;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      background: white;
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      color: #667eea;
+      margin-bottom: 0.5rem;
+    }
+
+    .header .subtitle {
+      color: #6b7280;
+      font-size: 0.875rem;
+    }
+
+    /* Stats */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 0.75rem;
+      padding: 1rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Quiz Card */
+    .quiz-card {
+      background: white;
+      border-radius: 1rem;
+      padding: 2rem 1.5rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+      min-height: 300px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .quiz-hidden {
+      display: none;
+    }
+
+    /* Progress */
+    .progress-container {
+      margin-bottom: 1.5rem;
+    }
+
+    .progress-text {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      color: #6b7280;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 0.5rem;
+      background: #e5e7eb;
+      border-radius: 0.25rem;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      transition: width 0.3s ease;
+    }
+
+    /* Word Display */
+    .word-display {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .word {
+      font-size: 2.5rem;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+      word-break: break-word;
+    }
+
+    .phonetic {
+      font-size: 1rem;
+      color: #6b7280;
+      margin-bottom: 1rem;
+    }
+
+    .context {
+      background: #f3f4f6;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      font-size: 0.875rem;
+      color: #4b5563;
+      font-style: italic;
+      line-height: 1.5;
+      margin-bottom: 1rem;
+    }
+
+    .definitions {
+      border-top: 2px solid #e5e7eb;
+      padding-top: 1rem;
+      text-align: left;
+    }
+
+    .definitions h3 {
+      font-size: 1.125rem;
+      color: #374151;
+      margin-bottom: 0.75rem;
+    }
+
+    .definitions ol {
+      padding-left: 1.5rem;
+    }
+
+    .definitions li {
+      color: #4b5563;
+      line-height: 1.6;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 1rem;
+      border: none;
+      border-radius: 0.75rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:active {
+      transform: scale(0.98);
+    }
+
+    .rating-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .btn-rating {
+      padding: 0.75rem 0.5rem;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .btn-rating:active {
+      transform: scale(0.95);
+    }
+
+    .btn-again {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .btn-hard {
+      background: #fed7aa;
+      color: #ea580c;
+    }
+
+    .btn-good {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .btn-easy {
+      background: #d1fae5;
+      color: #059669;
+    }
+
+    /* Completion Screen */
+    .completion-screen {
+      text-align: center;
+      padding: 2rem 0;
+    }
+
+    .completion-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+
+    .completion-title {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+    }
+
+    .completion-message {
+      color: #6b7280;
+      margin-bottom: 2rem;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+    }
+
+    .empty-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .empty-title {
+      font-size: 1.25rem;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 0.5rem;
+    }
+
+    .empty-message {
+      color: #6b7280;
+    }
+
+    @media (max-width: 480px) {
+      .word {
+        font-size: 2rem;
+      }
+      .stat-value {
+        font-size: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>🎯 CatchVoca Quiz</h1>
+      <div class="subtitle">모바일 간편 복습</div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="totalWords"><?= stats.total ?></div>
+        <div class="stat-label">Total Words</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="dueWords"><?= stats.dueToday ?></div>
+        <div class="stat-label">Due Today</div>
+      </div>
+    </div>
+
+    <!-- Quiz Card -->
+    <div class="quiz-card" id="quizCard">
+      <? if (stats.dueToday === 0) { ?>
+        <!-- Empty State -->
+        <div class="empty-state">
+          <div class="empty-icon">✨</div>
+          <div class="empty-title">복습할 단어가 없습니다</div>
+          <div class="empty-message">모든 단어를 복습했어요!</div>
+        </div>
+      <? } else { ?>
+        <!-- Progress -->
+        <div class="progress-container">
+          <div class="progress-text">
+            <span>진행률</span>
+            <span><span id="completed">0</span> / <span id="total"><?= stats.dueToday ?></span></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Word Display -->
+        <div class="word-display" id="wordDisplay">
+          <div class="word" id="word"></div>
+          <div class="phonetic" id="phonetic"></div>
+          <div class="context" id="context"></div>
+
+          <!-- Show Answer Button -->
+          <button class="btn btn-primary" id="showAnswerBtn" onclick="showAnswer()">
+            답안 보기
+          </button>
+
+          <!-- Definitions (hidden initially) -->
+          <div class="definitions quiz-hidden" id="definitions">
+            <h3>정의</h3>
+            <ol id="definitionList"></ol>
+
+            <!-- Rating Prompt -->
+            <p style="text-align: center; color: #6b7280; margin: 1rem 0 0.5rem 0; font-size: 0.875rem;">
+              얼마나 잘 기억하셨나요?
+            </p>
+
+            <!-- Rating Buttons -->
+            <div class="rating-grid">
+              <button class="btn-rating btn-again" onclick="submitRating(1)">
+                ❌<br>전혀
+              </button>
+              <button class="btn-rating btn-hard" onclick="submitRating(2)">
+                😓<br>어려움
+              </button>
+              <button class="btn-rating btn-good" onclick="submitRating(3)">
+                🤔<br>보통
+              </button>
+              <button class="btn-rating btn-easy" onclick="submitRating(4)">
+                ✅<br>쉬움
+              </button>
+            </div>
+          </div>
+        </div>
+      <? } ?>
+    </div>
+  </div>
+
+  <script>
+    // 데이터 주입
+    const dueWords = <?!= JSON.stringify(dueWords) ?>;
+    const snapshotId = "<?= snapshotId ?>";
+
+    let currentIndex = 0;
+    let completed = 0;
+    let showingAnswer = false;
+
+    // 초기화
+    if (dueWords.length > 0) {
+      loadWord(currentIndex);
+    }
+
+    /**
+     * 현재 단어 로드
+     */
+    function loadWord(index) {
+      const word = dueWords[index];
+      document.getElementById('word').textContent = word.word;
+      document.getElementById('phonetic').textContent = word.phonetic || '';
+      document.getElementById('context').textContent = word.context ? `"${word.context}"` : '';
+
+      // 답안 숨김
+      document.getElementById('showAnswerBtn').classList.remove('quiz-hidden');
+      document.getElementById('definitions').classList.add('quiz-hidden');
+      showingAnswer = false;
+
+      // 컨텍스트 표시 여부
+      const contextEl = document.getElementById('context');
+      if (!word.context) {
+        contextEl.style.display = 'none';
+      } else {
+        contextEl.style.display = 'block';
+      }
+
+      // 발음 기호 표시 여부
+      const phoneticEl = document.getElementById('phonetic');
+      if (!word.phonetic) {
+        phoneticEl.style.display = 'none';
+      } else {
+        phoneticEl.style.display = 'block';
+      }
+    }
+
+    /**
+     * 답안 표시
+     */
+    function showAnswer() {
+      const word = dueWords[currentIndex];
+
+      // 정의 목록 렌더링
+      const definitionList = document.getElementById('definitionList');
+      definitionList.innerHTML = '';
+
+      if (word.definitions && word.definitions.length > 0) {
+        word.definitions.forEach(def => {
+          const li = document.createElement('li');
+          li.textContent = def;
+          definitionList.appendChild(li);
+        });
+      } else {
+        definitionList.innerHTML = '<li>정의 없음</li>';
+      }
+
+      // UI 전환
+      document.getElementById('showAnswerBtn').classList.add('quiz-hidden');
+      document.getElementById('definitions').classList.remove('quiz-hidden');
+      showingAnswer = true;
+    }
+
+    /**
+     * 평가 제출
+     */
+    function submitRating(rating) {
+      if (!showingAnswer) {
+        return;
+      }
+
+      // 진행률 업데이트
+      completed++;
+      updateProgress();
+
+      // 다음 단어로 이동
+      if (currentIndex + 1 < dueWords.length) {
+        currentIndex++;
+        loadWord(currentIndex);
+      } else {
+        // 완료 화면 표시
+        showCompletionScreen();
+      }
+    }
+
+    /**
+     * 진행률 업데이트
+     */
+    function updateProgress() {
+      const total = dueWords.length;
+      const percentage = (completed / total) * 100;
+
+      document.getElementById('completed').textContent = completed;
+      document.getElementById('progressFill').style.width = percentage + '%';
+    }
+
+    /**
+     * 완료 화면 표시
+     */
+    function showCompletionScreen() {
+      const quizCard = document.getElementById('quizCard');
+      quizCard.innerHTML = `
+        <div class="completion-screen">
+          <div class="completion-icon">🎉</div>
+          <div class="completion-title">복습 완료!</div>
+          <div class="completion-message">${completed}개의 단어를 복습했습니다</div>
+          <button class="btn btn-primary" onclick="location.reload()">
+            다시 시작
+          </button>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>

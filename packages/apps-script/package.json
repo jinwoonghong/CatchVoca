@@ -1,0 +1,14 @@
+{
+  "name": "@catchvoca/apps-script",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CatchVoca Google Apps Script Mobile Quiz",
+  "scripts": {
+    "push": "clasp push",
+    "deploy": "clasp deploy"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.83"
+  }
+}

@@ -3,6 +3,10 @@
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": true,
+    "emitDeclarationOnly": false,
     "types": ["vitest/globals"]
   },
   "include": ["src/**/*", "tests/**/*"],

@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Referer",
+          "operation": "set",
+          "value": "https://en.dict.naver.com/"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://en.dict.naver.com/api3/enko/search*",
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  }
+]

@@ -117,6 +117,7 @@ export enum Rating {
   Hard = 2, // 어렵게 기억
   Good = 3, // 보통
   Easy = 4, // 쉽게 기억
+  VeryEasy = 5, // 매우 쉽게 기억
 }
 
 // ============================================================================
@@ -248,3 +249,49 @@ export interface ProStatus {
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
 }
+
+// ============================================================================
+// Repository DTOs
+// ============================================================================
+
+/**
+ * WordEntry 생성 DTO
+ */
+export type WordEntryCreateDTO = Omit<
+  WordEntry,
+  'id' | 'createdAt' | 'updatedAt' | 'normalizedWord' | 'manuallyEdited'
+> & {
+  word: string;
+  context: string;
+  url: string;
+  sourceTitle: string;
+};
+
+/**
+ * WordEntry 업데이트 DTO
+ */
+export type WordEntryUpdateDTO = Partial<
+  Pick<
+    WordEntry,
+    | 'definitions'
+    | 'phonetic'
+    | 'audioUrl'
+    | 'tags'
+    | 'isFavorite'
+    | 'note'
+    | 'viewCount'
+    | 'lastViewedAt'
+  >
+>;
+
+/**
+ * ReviewState 생성 DTO
+ */
+export type ReviewStateCreateDTO = Omit<ReviewState, 'id'>;
+
+/**
+ * ReviewState 업데이트 DTO
+ */
+export type ReviewStateUpdateDTO = Partial<
+  Pick<ReviewState, 'nextReviewAt' | 'interval' | 'easeFactor' | 'repetitions' | 'history'>
+>;
