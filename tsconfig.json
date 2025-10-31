@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    /* Path aliases */
+    "baseUrl": ".",
+    "paths": {
+      "@catchvoca/core": ["./packages/core/src"],
+      "@catchvoca/core/*": ["./packages/core/src/*"],
+      "@catchvoca/types": ["./packages/types/src"],
+      "@catchvoca/types/*": ["./packages/types/src/*"]
+    }
+  },
+  "include": ["packages/*/src"],
+  "exclude": ["node_modules", "dist", "**/node_modules", "**/dist"]
+}
