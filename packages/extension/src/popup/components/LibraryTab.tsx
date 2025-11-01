@@ -213,6 +213,15 @@ export function LibraryTab() {
                         🔊
                       </button>
                     )}
+                    {/* 조회수 표시 */}
+                    {word.viewCount !== undefined && word.viewCount > 0 && (
+                      <span
+                        className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded flex items-center gap-1"
+                        title={`${word.viewCount}번 조회`}
+                      >
+                        👁️ {word.viewCount}
+                      </span>
+                    )}
                   </div>
 
                   {/* 첫 번째 정의 미리보기 */}

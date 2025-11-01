@@ -119,8 +119,15 @@ function extractContext(selection: Selection | null): string {
     return selection.toString();
   }
 
+  // CatchVoca 툴팁 제외하고 텍스트 추출
+  const clonedElement = element.cloneNode(true) as HTMLElement;
+  const catchvocaTooltip = clonedElement.querySelector('#catchvoca-tooltip');
+  if (catchvocaTooltip) {
+    catchvocaTooltip.remove();
+  }
+
   // 요소의 전체 텍스트 추출
-  const fullText = element.textContent || '';
+  const fullText = clonedElement.textContent || '';
 
   // 마침표, 물음표, 느낌표로 문장 분리
   const sentences = fullText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 0);
@@ -217,6 +224,14 @@ async function showTooltip(word: string, mouseX: number, mouseY: number): Promis
     if (response.success) {
       const result: LookupResult = response.data;
       updateTooltipContent(word, result);
+
+      // 단어 조회 시 viewCount 증가 (비동기로 실행, 결과 무시)
+      chrome.runtime.sendMessage({
+        type: 'INCREMENT_VIEW_COUNT',
+        word: word,
+      }).catch((err) => {
+        console.warn('[CatchVoca] Increment view count warning:', err);
+      });
     } else {
       updateTooltipError('단어를 찾을 수 없습니다.');
     }

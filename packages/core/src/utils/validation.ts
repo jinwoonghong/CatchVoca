@@ -58,10 +58,16 @@ export function isValidContext(context: string): boolean {
 
 /**
  * URL 유효성 검증
+ * 빈 문자열은 허용 (수동 입력의 경우 URL이 없을 수 있음)
  */
 export function isValidUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
+  if (typeof url !== 'string') {
     return false;
+  }
+
+  // 빈 문자열은 허용
+  if (url.trim() === '') {
+    return true;
   }
 
   try {

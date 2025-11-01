@@ -81,8 +81,18 @@ async function saveWord(wordData: Partial<WordEntryInput>): Promise<void> {
   await ensureDbInitialized();
 
   try {
-    // 1. 사전 API 조회
-    const lookupResult = await lookupWord(wordData.word);
+    // 1. 사전 정보 준비 (이미 제공된 경우 사용, 없으면 API 조회)
+    let definitions = wordData.definitions;
+    let phonetic = wordData.phonetic;
+    let audioUrl = wordData.audioUrl;
+
+    // definitions가 없으면 API 조회
+    if (!definitions || definitions.length === 0) {
+      const lookupResult = await lookupWord(wordData.word);
+      definitions = lookupResult.definitions;
+      phonetic = lookupResult.phonetic;
+      audioUrl = lookupResult.audioUrl;
+    }
 
     // 2. WordEntry 생성 데이터 준비
     const wordEntryData = {
@@ -90,9 +100,9 @@ async function saveWord(wordData: Partial<WordEntryInput>): Promise<void> {
       context: wordData.context || wordData.word,
       url: wordData.url || '',
       sourceTitle: wordData.sourceTitle || '',
-      definitions: lookupResult.definitions,
-      phonetic: lookupResult.phonetic,
-      audioUrl: lookupResult.audioUrl,
+      definitions: definitions || [],
+      phonetic: phonetic,
+      audioUrl: audioUrl,
       language: 'en' as const,
       contextSnapshot: null,
       selectionRange: null,
@@ -124,6 +134,7 @@ async function saveWord(wordData: Partial<WordEntryInput>): Promise<void> {
       title: 'CatchVoca',
       message: `저장 실패: ${error instanceof Error ? error.message : 'Unknown error'}`,
     });
+    throw error;
   }
 }
 
@@ -380,6 +391,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         case 'UPDATE_WORD':
           await wordRepository.update(message.wordId, message.changes);
           sendResponse({ success: true });
+          break;
+
+        case 'INCREMENT_VIEW_COUNT':
+          // 단어 조회 시 viewCount 증가
+          try {
+            const existingWords = await wordRepository.findByNormalizedWord(message.word);
+            if (existingWords.length > 0 && existingWords[0]) {
+              await wordRepository.incrementViewCount(existingWords[0].id);
+            }
+            sendResponse({ success: true });
+          } catch (err) {
+            console.error('[CatchVoca] Increment view count error:', err);
+            sendResponse({ success: false });
+          }
           break;
 
         case 'GET_REVIEW_STATS':
