@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { CollectTab } from './components/CollectTab';
-import { ManageTab } from './components/ManageTab';
-import { QuizTab } from './components/QuizTab';
+import { ReviewTab } from './components/ReviewTab';
+import { LibraryTab } from './components/LibraryTab';
 import { SettingsTab } from './components/SettingsTab';
 
-type Tab = 'collect' | 'manage' | 'quiz' | 'settings';
+type Tab = 'collect' | 'review' | 'library' | 'settings';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('collect');
@@ -24,25 +24,25 @@ function App() {
             active={activeTab === 'collect'}
             onClick={() => setActiveTab('collect')}
           >
-            수집
+            📝 수집
           </TabButton>
           <TabButton
-            active={activeTab === 'manage'}
-            onClick={() => setActiveTab('manage')}
+            active={activeTab === 'review'}
+            onClick={() => setActiveTab('review')}
           >
-            관리
+            🎯 복습
           </TabButton>
           <TabButton
-            active={activeTab === 'quiz'}
-            onClick={() => setActiveTab('quiz')}
+            active={activeTab === 'library'}
+            onClick={() => setActiveTab('library')}
           >
-            퀴즈
+            📚 라이브러리
           </TabButton>
           <TabButton
             active={activeTab === 'settings'}
             onClick={() => setActiveTab('settings')}
           >
-            설정
+            ⚙️ 설정
           </TabButton>
         </div>
       </nav>
@@ -50,8 +50,8 @@ function App() {
       {/* Content */}
       <main className="p-4">
         {activeTab === 'collect' && <CollectTab />}
-        {activeTab === 'manage' && <ManageTab />}
-        {activeTab === 'quiz' && <QuizTab />}
+        {activeTab === 'review' && <ReviewTab />}
+        {activeTab === 'library' && <LibraryTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </main>
     </div>
