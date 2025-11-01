@@ -3,7 +3,7 @@
  * API 호출, 데이터 저장, 컨텍스트 메뉴 관리
  */
 
-import { wordRepository, reviewStateRepository, eventBus, db } from '@catchvoca/core';
+import { wordRepository, reviewStateRepository, eventBus, db, calculateNextReview } from '@catchvoca/core';
 import type { WordEntryInput, LookupResult, Rating } from '@catchvoca/types';
 
 // DB 초기화 (Extension 환경에서 명시적으로 open)
@@ -397,21 +397,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
 
         case 'SUBMIT_REVIEW':
-          // TODO: Implement SM-2 algorithm for calculating next review
-          // For now, just mark as reviewed
+          // SM-2 알고리즘을 사용하여 다음 복습 일정 계산
           const reviewState = await reviewStateRepository.findByWordId(message.wordId);
           if (reviewState) {
             const rating: Rating = message.rating;
-            // Simple placeholder: next review in 1 day
-            const nextReviewAt = Date.now() + 86400000;
+
+            // SM-2 알고리즘으로 다음 복습 일정 계산
+            const sm2Result = calculateNextReview(
+              {
+                interval: reviewState.interval,
+                easeFactor: reviewState.easeFactor,
+                repetitions: reviewState.repetitions,
+              },
+              rating
+            );
+
+            // 복습 기록 저장
             await reviewStateRepository.recordReview(
               message.wordId,
               rating,
-              nextReviewAt,
-              1,
-              2.5,
-              0
+              sm2Result.nextReviewAt,
+              sm2Result.interval,
+              sm2Result.easeFactor,
+              sm2Result.repetitions
             );
+
+            console.log('[CatchVoca] SM-2 review recorded:', {
+              wordId: message.wordId,
+              rating,
+              nextReviewAt: new Date(sm2Result.nextReviewAt).toLocaleString('ko-KR'),
+              interval: sm2Result.interval,
+              easeFactor: sm2Result.easeFactor.toFixed(2),
+              repetitions: sm2Result.repetitions,
+            });
           }
           sendResponse({ success: true });
           break;
