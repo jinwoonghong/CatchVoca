@@ -3,11 +3,30 @@
  * API 호출, 데이터 저장, 컨텍스트 메뉴 관리
  */
 
-import { wordRepository, reviewStateRepository, eventBus } from '@catchvoca/core';
+import { wordRepository, reviewStateRepository, eventBus, db } from '@catchvoca/core';
 import type { WordEntryInput, LookupResult, Rating } from '@catchvoca/types';
 
+// DB 초기화 (Extension 환경에서 명시적으로 open)
+let dbInitialized = false;
+
+async function ensureDbInitialized(): Promise<void> {
+  if (!dbInitialized) {
+    try {
+      await db.open();
+      dbInitialized = true;
+      console.log('[CatchVoca] Database initialized successfully');
+    } catch (error) {
+      console.error('[CatchVoca] Database initialization failed:', error);
+      throw error;
+    }
+  }
+}
+
 // 컨텍스트 메뉴 생성
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
+  // DB 초기화
+  await ensureDbInitialized();
+
   chrome.contextMenus.create({
     id: 'catchvoca-save-word',
     title: 'CatchVoca에 저장',
@@ -57,6 +76,9 @@ async function saveWord(wordData: Partial<WordEntryInput>): Promise<void> {
   if (!wordData.word) {
     throw new Error('Word is required');
   }
+
+  // DB 초기화 확인
+  await ensureDbInitialized();
 
   try {
     // 1. 사전 API 조회
@@ -157,10 +179,14 @@ async function fetchNaverDictionary(word: string): Promise<LookupResult> {
 
   const data = await response.json();
 
+  // 전체 응답 구조 로깅
+  console.log('[CatchVoca] Naver API full response:', JSON.stringify(data, null, 2));
+
   // 응답 파싱
   const items = data?.searchResultMap?.searchResultListMap?.WORD?.items || [];
 
   if (items.length === 0) {
+    console.warn('[CatchVoca] Naver API returned no items');
     return {
       definitions: [],
       phonetic: undefined,
@@ -170,6 +196,9 @@ async function fetchNaverDictionary(word: string): Promise<LookupResult> {
 
   const firstItem = items[0];
 
+  console.log('[CatchVoca] Naver API first item keys:', Object.keys(firstItem));
+  console.log('[CatchVoca] Naver API first item:', JSON.stringify(firstItem, null, 2));
+
   // 정의 추출
   const definitions: string[] = [];
   const meansCollector = firstItem.meansCollector || [];
@@ -177,8 +206,15 @@ async function fetchNaverDictionary(word: string): Promise<LookupResult> {
     const means = collector.means || [];
     for (const mean of means) {
       if (mean.value) {
-        // HTML 태그 제거
-        const cleanValue = mean.value.replace(/<[^>]*>/g, '').trim();
+        // HTML 태그 제거 및 엔티티 디코딩
+        let cleanValue = mean.value.replace(/<[^>]*>/g, '').trim();
+        cleanValue = cleanValue
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&nbsp;/g, ' ');
         if (cleanValue) {
           definitions.push(cleanValue);
         }
@@ -186,13 +222,57 @@ async function fetchNaverDictionary(word: string): Promise<LookupResult> {
     }
   }
 
-  // 발음 기호 추출
-  const phonetic = firstItem.phoneticSymbol || firstItem.pronSymbol;
+  // 발음 기호 추출 - searchPhoneticSymbolList에서 가져오기
+  let phonetic: string | undefined;
+  let audioUrl: string | undefined;
+
+  if (firstItem.searchPhoneticSymbolList && Array.isArray(firstItem.searchPhoneticSymbolList)) {
+    // 미국식 발음 우선, 없으면 첫 번째 항목 사용
+    const usPhonetic = firstItem.searchPhoneticSymbolList.find((p: any) => p.symbolTypeCode === 'US');
+    const phoneticItem = usPhonetic || firstItem.searchPhoneticSymbolList[0];
+
+    if (phoneticItem) {
+      phonetic = phoneticItem.symbolValue;
+      audioUrl = phoneticItem.symbolFile;
+    }
+  }
+
+  // Fallback: 다른 필드에서 시도
+  if (!phonetic) {
+    phonetic = firstItem.phoneticSymbol
+      || firstItem.phonetic
+      || firstItem.pronSymbol
+      || firstItem.pronunciation
+      || (firstItem.phonetics && firstItem.phonetics[0]?.text);
+  }
+
+  // Fallback: 다른 오디오 필드에서 시도
+  if (!audioUrl) {
+    // phonetics 배열에서 찾기
+    if (firstItem.phonetics && Array.isArray(firstItem.phonetics)) {
+      for (const ph of firstItem.phonetics) {
+        if (ph.audio || ph.audioUrl || ph.soundUrl) {
+          audioUrl = ph.audio || ph.audioUrl || ph.soundUrl;
+          break;
+        }
+      }
+    }
+
+    // 직접 필드에서 찾기
+    if (!audioUrl) {
+      audioUrl = firstItem.audioUrl
+        || firstItem.soundUrl
+        || firstItem.mp3Url
+        || firstItem.pronUrl;
+    }
+  }
+
+  console.log('[CatchVoca] Naver API result:', { phonetic, audioUrl, definitions: definitions.slice(0, 3) });
 
   return {
     definitions,
     phonetic,
-    audioUrl: undefined, // 네이버는 오디오 URL 제공하지 않음
+    audioUrl,
   };
 }
 
@@ -227,7 +307,18 @@ async function fetchDictionaryAPI(word: string): Promise<LookupResult> {
     const defs = meaning.definitions || [];
     for (const def of defs) {
       if (def.definition) {
-        definitions.push(def.definition);
+        // HTML 태그 제거 및 엔티티 디코딩
+        let cleanDef = def.definition.replace(/<[^>]*>/g, '').trim();
+        cleanDef = cleanDef
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&nbsp;/g, ' ');
+        if (cleanDef) {
+          definitions.push(cleanDef);
+        }
       }
     }
   }
@@ -249,6 +340,8 @@ async function fetchDictionaryAPI(word: string): Promise<LookupResult> {
     }
   }
 
+  console.log('[CatchVoca] Dictionary API result:', { phonetic, audioUrl, definitions: definitions.slice(0, 3) });
+
   return {
     definitions,
     phonetic,
@@ -260,6 +353,9 @@ async function fetchDictionaryAPI(word: string): Promise<LookupResult> {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
+      // DB 초기화 확인
+      await ensureDbInitialized();
+
       switch (message.type) {
         case 'LOOKUP_WORD':
           const lookupResult = await lookupWord(message.word);

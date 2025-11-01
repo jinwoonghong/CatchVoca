@@ -4,287 +4,290 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-CatchVoca is a Local-First vocabulary learning Chrome extension that automatically collects words during web browsing and uses SM-2 spaced repetition for effective learning. The project prioritizes offline-first, privacy-conscious design with optional Pro features (AI analysis, cloud sync).
+**CatchVoca** is a Local-First vocabulary learning Chrome extension that automatically collects words during web browsing and uses the SM-2 spaced repetition algorithm for effective memorization.
 
-**Current Status**: Planning phase - comprehensive requirements and specifications exist, but source code implementation has not yet begun.
+**Core Philosophy**: Local-First architecture with IndexedDB as the single source of truth, enabling full offline functionality and complete user data privacy.
+
+**Current Status**: ✅ Week 1-2 Core Package Complete (113/113 tests passing) → ⏳ Week 3-4 Chrome Extension Development Next
 
 ## Technology Stack
 
-**Frontend**:
-- React 18+ with TypeScript 5+ (strict mode)
-- Vite 5+ for build tooling
-- TailwindCSS 3+ for styling
-- Zustand 4+ for state management
-- React Router 6+ for navigation
-- Recharts 2+ for data visualization
-
-**Data Layer**:
-- **Primary Database**: Dexie.js (IndexedDB wrapper) - single source of truth
-- **Cloud Sync**: Firestore (Pro users only)
-- **Auth**: Firebase Authentication
-- **Payments**: Stripe
-
+**Frontend**: React 18, TypeScript 5, Vite 5, TailwindCSS 3
+**State Management**: Zustand 4
+**Database**: Dexie.js 3.2+ (IndexedDB wrapper)
+**Testing**: Vitest 1.2+ with fake-indexeddb, Playwright (planned)
+**Extension**: Chrome Manifest V3
+**Package Manager**: pnpm 8+ (monorepo workspace)
 **External APIs**:
-- **Naver Dictionary API** (primary): `https://en.dict.naver.com/api3/enko/search`
-- **Free Dictionary API** (fallback): `https://api.dictionaryapi.dev`
-- **OpenAI GPT-3.5**: Word importance analysis (Pro feature)
-- **Google Apps Script**: Mobile quiz distribution backend
-
-**Infrastructure**:
-- Hosting: Vercel (Hobby tier)
-- Monitoring: Sentry (Free tier)
-- Analytics: Google Analytics 4
-- Package Manager: pnpm (monorepo structure planned)
+- Naver Dictionary API (primary): `https://en.dict.naver.com/api3/enko/search`
+- Free Dictionary API (fallback): `https://api.dictionaryapi.dev`
+- Google Apps Script (mobile quiz, Pro feature)
 
 ## Development Commands
 
-*Note: Project is in planning phase. Expected commands once implemented:*
-
+### Testing
 ```bash
-# Setup
-pnpm install                    # Install dependencies
+# Run all tests (113/113 currently passing)
+pnpm test
 
-# Development
-pnpm dev                        # Start development server
-pnpm build                      # Production build
-pnpm preview                    # Preview production build
+# Run tests in watch mode
+pnpm test:watch
 
-# Testing
-pnpm test                       # Run unit tests (Vitest)
-pnpm test:watch                 # Watch mode for tests
-pnpm test:e2e                   # Run E2E tests (Playwright)
+# Run tests for core package only
+pnpm test:core
 
-# Code Quality
-pnpm lint                       # ESLint + Prettier
-pnpm typecheck                  # TypeScript type checking
+# Run tests with UI
+pnpm --filter @catchvoca/core test:ui
+
+# Run specific test file
+pnpm --filter @catchvoca/core test -- algorithm.test.ts
+
+# Run tests matching pattern
+pnpm --filter @catchvoca/core test -- -t "SM-2"
 ```
 
-## Architecture Principles
+### Building
+```bash
+# Build all packages
+pnpm build
 
-### Local-First Design
+# Build core package only
+pnpm build:core
 
-**IndexedDB is the Single Source of Truth (SSOT)**:
-- All data operations happen locally first
-- Cloud sync (Firestore) is optional and only for Pro users
-- Offline-first: All core features work without network connection
-- BroadcastChannel API for real-time UI updates across tabs/windows
-
-### Core Data Models
-
-**WordEntry** (Primary entity):
-```typescript
-{
-  id: string;                    // UUID
-  word: string;                  // Normalized word
-  definitions: Definition[];     // Multiple definitions from APIs
-  context: string;               // User-selected sentence
-  url: string;                   // Source webpage URL
-  tags: string[];                // User-defined tags
-  createdAt: number;            // Unix timestamp
-  updatedAt: number;            // Last modified timestamp
-}
+# Build extension only (planned Week 3-4)
+pnpm build:extension
 ```
 
-**ReviewState** (SM-2 algorithm state):
-```typescript
-{
-  id: string;                    // UUID
-  wordId: string;                // FK to WordEntry
-  nextReviewAt: number;         // Unix timestamp for next review
-  interval: number;             // Days until next review
-  repetitions: number;          // Consecutive correct reviews
-  easeFactor: number;           // SM-2 ease factor (1.3-2.5)
-  history: ReviewLog[];         // Review attempt history
-}
+### Code Quality
+```bash
+# Type checking across all packages
+pnpm typecheck
+
+# Lint all packages
+pnpm lint
+
+# Lint and auto-fix
+pnpm lint:fix
+
+# Clean build artifacts and node_modules
+pnpm clean
 ```
 
-### Chrome Extension Architecture
+## Architecture
 
-**Manifest V3 Structure**:
-- **Content Script**: Detects text selection on webpages, sends to background
-- **Background Service Worker**: Fetches definitions from APIs, stores in Dexie
-- **Popup UI**: Unified interface for word collection, management, quiz, settings
-- **declarativeNetRequest**: Required for Naver Dictionary API Referer header
+### Monorepo Structure (pnpm workspace)
 
-**Data Flow**:
-1. User selects text → Content Script captures selection
-2. Content Script → Background Worker (chrome.runtime.sendMessage)
-3. Background Worker fetches from Naver Dictionary API (fallback to DictionaryAPI)
-4. Data stored in IndexedDB via Dexie
-5. BroadcastChannel notifies all tabs/windows to refresh UI
-
-### API Fallback Strategy
-
-**Primary → Fallback Pattern**:
-1. Try Naver Dictionary API first (more comprehensive definitions)
-2. On failure (network error, rate limit, API down) → Free Dictionary API
-3. On complete failure → Store word with user's context only, mark for retry
-4. Background retry mechanism for failed API calls
-
-**Naver Dictionary API Requirements**:
-- Requires `declarativeNetRequest` permission in manifest.json
-- Custom Referer header: `https://en.dict.naver.com/`
-- Rate limiting: Implement exponential backoff
-
-### SM-2 Spaced Repetition Algorithm
-
-**Core Implementation**:
-- Based on SuperMemo 2 algorithm
-- Calculates optimal review intervals based on user performance
-- Adjusts ease factor (difficulty) per word based on review history
-- Default ease factor: 2.5, range: 1.3-2.5
-
-**Review Grading**:
-- Grade 5 (Perfect): No hesitation, correct
-- Grade 4 (Good): Slight hesitation, correct
-- Grade 3 (Pass): Difficult recall, correct
-- Grade 0-2 (Fail): Incorrect, reset interval to 1 day
-
-**Critical**: Unit tests MUST validate SM-2 calculations for correctness.
-
-### Conflict Resolution Strategy
-
-**Last-Write-Wins (LWW)**:
-- For Pro users with Firestore sync enabled
-- Use `updatedAt` timestamp to resolve conflicts
-- Local changes always preferred if timestamps equal
-- Firestore acts as backup, not primary database
-
-## Pro Feature Gating
-
-**Free Tier Limits**:
-- 1,000 words maximum
-- Basic statistics only
-- Ads on mobile quiz links
-- Local storage only (no cloud sync)
-
-**Pro Features** ($4.99/month):
-- Unlimited words
-- AI-powered word importance analysis (OpenAI GPT-3.5)
-- Real-time Firestore cloud sync across devices
-- Mobile quiz distribution (no ads)
-- Advanced statistics and dashboard
-
-**Implementation Pattern**:
-```typescript
-// Check Pro status before feature access
-if (user.isPro) {
-  // Enable Pro feature
-} else {
-  // Show upgrade prompt or limit functionality
-}
+```
+CatchVoca/
+├── packages/
+│   ├── types/         # Shared TypeScript type definitions
+│   ├── core/          # Core business logic (Dexie, SM-2, EventBus)
+│   └── extension/     # Chrome Extension UI (planned Week 3-4)
+├── docs/              # Project documentation
+└── scripts/           # Build scripts
 ```
 
-## Key Configuration Points
+**Package Dependencies**:
+- `@catchvoca/types`: Shared by both core and extension
+- `@catchvoca/core`: Used by extension
+- All type imports use `import type { } from '@catchvoca/types'`
 
-### Dexie Schema Setup
+### Core Package Architecture
 
-```typescript
-const db = new Dexie('CatchVocaDB');
-db.version(1).stores({
-  word_entries: 'id, word, *tags, createdAt, updatedAt',
-  review_states: 'id, wordId, nextReviewAt'
-});
-```
+**Layer 1: Database (Dexie.js)**
+- `db/database.ts`: CheckVocaDB class with two tables
+  - `wordEntries`: Stores word information (indexed: normalizedWord, url, tags, timestamps)
+  - `reviewStates`: Stores SM-2 algorithm state (indexed: wordId, nextReviewAt)
+- **Pattern**: Singleton instance exported as `db`
+- **Version**: Schema v2 with migration support
 
-**Indexes**:
-- `word_entries`: Indexed by `word` (unique lookup), `tags` (multi-entry), `createdAt` (sorting)
-- `review_states`: Indexed by `wordId` (FK), `nextReviewAt` (due review queries)
+**Layer 2: Repository Pattern**
+- `repositories/BaseRepository.ts`: Abstract base class with common CRUD operations
+- `repositories/WordRepository.ts`: Word-specific operations
+  - `create()`, `findById()`, `findByNormalizedWord()`, `search()`, `update()`, `delete()`
+  - Features: Pagination, soft delete (tombstone), cascade delete ReviewState
+- `repositories/ReviewStateRepository.ts`: Review state management
+  - `create()`, `findByWordId()`, `findDueReviews()`, `update()`, `delete()`
+  - Optimized query for due reviews: `where('nextReviewAt').below(Date.now())`
 
-### BroadcastChannel Event Bus
+**Layer 3: Business Logic**
+- `services/sm2/algorithm.ts`: SuperMemo 2 spaced repetition algorithm
+  - `calculateNextReview(state, rating)`: Core SM-2 calculation (pure function)
+  - `createInitialReviewState(wordId)`: Initialize new review state
+  - Rating enum: Again(1), Hard(2), Good(3), Easy(4), VeryEasy(5)
+- `services/events/EventBus.ts`: BroadcastChannel wrapper
+  - Real-time cross-tab synchronization
+  - Event types: 'word:created', 'word:updated', 'word:deleted', 'review:completed', 'sync:completed'
+  - Self-message filtering via unique senderId
 
-**Channel Name**: `catchvoca-sync`
+**Layer 4: Utilities**
+- `utils/normalize.ts`: Text normalization (word, context, URL, HTML sanitization)
+- `utils/validation.ts`: Input validation (word 1-50 chars, context max 500, URL format)
 
-**Event Types**:
-- `word-added`: New word collected
-- `word-updated`: Word modified (tags, notes)
-- `word-deleted`: Word removed
-- `review-completed`: Quiz review finished
-- `sync-status-changed`: Firestore sync status update
+### Data Models (packages/types/src/index.ts)
 
-**Usage**: All UI components subscribe to this channel for real-time updates without prop drilling or complex state management.
+**WordEntry**: Stores all word information
+- ID format: `${normalizedWord}::${url}` (enables duplicate detection and re-learning)
+- Fields: word, normalizedWord, definitions[], phonetic, audioUrl, language, context, url, sourceTitle, tags[], isFavorite, note, viewCount, lastViewedAt, createdAt, updatedAt, deletedAt
 
-### Performance Targets
+**ReviewState**: SM-2 algorithm state
+- Fields: id, wordId (FK), nextReviewAt, interval, easeFactor, repetitions, history[]
+- Lifecycle: Created on first word save, updated after each quiz review
 
-- Word list loading: <500ms for 1,000 words
-- Quiz card transitions: <100ms
-- API response handling: <2s timeout with fallback
-- IndexedDB queries: <50ms for typical operations
-- Mobile quiz page load: <3s on 3G
+**EventType**: String literal union
+- Values: 'word:created' | 'word:updated' | 'word:deleted' | 'review:completed' | 'sync:completed'
+
+### SM-2 Algorithm Implementation Details
+
+**Formula**: `easeFactor = easeFactor + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02))`
+
+**Interval Calculation**:
+- First review: Always 1 day
+- Second review: Always 6 days
+- Third+ review: `Math.round(interval * easeFactor)`
+- On failure (rating < 3): Reset repetitions=0, interval=1
+
+**Bounds**: easeFactor min=1.3, max=2.5
+
+**Test Coverage**: 100% - validates all edge cases (consecutive failures, consecutive successes, easeFactor bounds)
+
+### EventBus Self-Message Filtering
+
+Each EventBus instance generates a unique `senderId` on construction using `crypto.randomUUID().substring(0, 8)`. When emitting events, the senderId is included in the message. On receiving messages, instances check `if (message.senderId === this.senderId)` and return early to prevent infinite loops.
+
+### Repository Cascade Delete Pattern
+
+When deleting a WordEntry via `WordRepository.delete(id)`:
+1. Check if ReviewState exists for this wordId: `await reviewStateRepository.findByWordId(id)`
+2. If exists, delete ReviewState first: `await reviewStateRepository.delete(reviewState.id)`
+3. Then delete WordEntry: `await this.table.delete(id)`
+
+This ensures no orphaned ReviewState records remain in the database.
 
 ## Testing Strategy
 
-### Unit Tests (Vitest)
+### Test Environment
+- **Framework**: Vitest 1.2+ with fake-indexeddb 5.0+
+- **DOM**: jsdom 27.1+ for browser API simulation
+- **Coverage**: 100% requirement for core package
+- **Current Status**: 113/113 tests passing
 
-**Critical Test Coverage**:
-- SM-2 algorithm calculations (interval, ease factor, next review date)
-- Dexie repository methods (CRUD operations)
-- API fallback logic (Naver → DictionaryAPI)
-- Word importance scoring algorithm
-- Conflict resolution (LWW timestamp comparison)
+### Test Structure
+Tests mirror source structure: `packages/core/tests/` matches `packages/core/src/`
 
-### E2E Tests (Playwright)
+**Example**:
+- Source: `src/services/sm2/algorithm.ts`
+- Tests: `tests/services/sm2/algorithm.test.ts`
 
-**User Journeys to Test**:
-1. Text selection → Word collection → Review in popup
-2. Quiz flow: Start quiz → Answer cards → Review results
-3. Word management: Search, filter, tag, delete
-4. Pro upgrade flow: Payment → Feature unlock
-5. Sync flow: Local change → Firestore update → Cross-device sync
+### MockBroadcastChannel Pattern
+EventBus tests use a custom MockBroadcastChannel class that simulates multi-tab communication:
+```typescript
+class MockBroadcastChannel {
+  private static channels: Map<string, MockBroadcastChannel[]> = new Map();
 
-### Extension Testing
+  postMessage(message: unknown): void {
+    // Send to all other instances with same channel name
+    channels.forEach(channel => {
+      if (channel !== this && channel.onmessage) {
+        setTimeout(() => channel.onmessage(new MessageEvent('message', { data: message })), 0);
+      }
+    });
+  }
+}
+```
 
-**Chrome Extension Specific**:
-- Content script injection on webpages
-- Background worker persistence and lifecycle
-- Storage API usage and quota limits
-- declarativeNetRequest rule application
+### Critical Test Scenarios
+1. **SM-2 Algorithm**: First review (1 day), second review (6 days), third+ review (interval * easeFactor), failure resets, easeFactor bounds
+2. **Repository CRUD**: Create with auto-generated fields, update with validation, soft delete (tombstone), cascade delete
+3. **EventBus**: Cross-instance messaging, self-message filtering, error isolation (one handler error doesn't break others)
+4. **Normalization**: Word lowercasing, whitespace trimming, HTML tag stripping, URL sanitization
 
-## Development Roadmap
+## Documentation Reference
 
-**Phase 1 - MVP (6 weeks)**:
-- Week 1-2: Core package + Dexie setup
-- Week 3-4: Chrome Extension integrated UI (word collection, quiz)
-- Week 5-6: Google Apps Script mobile quiz backend
+**Primary Development Guide**: [DEV_PLAN.md](./DEV_PLAN.md)
+- Detailed implementation specifications
+- Week-by-week development plan with completion criteria
+- API integration details (Naver Dictionary, Dictionary API)
+- Complete data schemas and code examples
 
-**Phase 2 - Monetization (6 weeks)**:
-- Week 9-10: Ad system integration
-- Week 11-12: Pro subscription (Firebase Auth + Stripe)
-- Week 13-14: AI webpage analysis (OpenAI integration)
+**Progress Tracking**: [PROGRESS.md](./PROGRESS.md)
+- Current status: Week 1-2 complete (113/113 tests), Week 3-4 next
+- Detailed task breakdowns with 3 priority levels
+- Test coverage statistics
 
-**Phase 3 - Advanced Features (4 weeks)**:
-- Week 15-16: Firestore real-time sync
-- Week 17-18: Dashboard + statistics + Recharts
+**Commit Guidelines**: [DEVELOPMENT_LOG.md](./DEVELOPMENT_LOG.md)
+- Commit message format: `<type>(<scope>): <subject>`
+- Types: feat, fix, docs, style, refactor, test, chore, init
+- Scopes: core, extension, types, gas, docs, config, tests
+- Milestone commit templates for each week
 
-**Phase 4 - Polish (2 weeks)**:
-- Week 19-20: Performance optimization, accessibility (WCAG 2.1 AA), launch prep
+**Planning Documents**:
+- [plan.md](./plan.md): AI agent-friendly project summary
+- [DEV_PLAN.md](./DEV_PLAN.md): Developer implementation guide
 
-## Important Documentation
+## Development Status & Roadmap
 
-- [Final Product Plan](docs/docs/최종_기획서.md) - v0.2.0 comprehensive specification
-- [Requirements Specification](docs/docs/요구사항_명세서.md) - Detailed functional requirements
-- [Naver Dictionary API Spec](docs/docs/etc/네이버_사전_API_명세_2025-10-27.md) - API integration details
-- [User Journey](docs/docs/etc/사용자_여정_기반_기능_명세.md) - User flow and feature mapping
-- [Web Parsing Strategy](docs/docs/parsing.md) - Content script implementation guide
-- [AI Agent Guide](plan.md) - Implementation guide for AI-assisted development
+**✅ Completed (Week 1-2)**: Core Package Development
+- Dexie.js database schema (wordEntries, reviewStates)
+- Repository pattern (BaseRepository, WordRepository, ReviewStateRepository)
+- SM-2 spaced repetition algorithm with 100% test coverage
+- EventBus for real-time cross-tab synchronization
+- Utility functions (normalize, validation)
+- **Status**: 113/113 tests passing
 
-## Error Handling
+**⏳ Next (Week 3-4)**: Chrome Extension Development
+- Manifest V3 configuration with declarativeNetRequest
+- Content Script for text selection detection (mouseup event)
+- Background Service Worker with API integration
+  - Naver Dictionary API (primary) with Referer header modification
+  - Free Dictionary API (fallback)
+  - Result merging: Naver definitions + Dictionary API phonetics
+- Popup UI with React (4 modes: collect, manage, quiz, settings)
+- Re-learning support (detection + alert for previously learned words)
 
-**Sentry Integration**:
-- Track API failures (Naver, DictionaryAPI, OpenAI, Firestore)
-- Monitor extension lifecycle errors (content script, background worker)
-- IndexedDB quota exceeded errors
-- Payment flow failures (Stripe)
+**⏳ Future (Week 5-6)**: Google Apps Script Mobile Quiz
+- doPost(): Snapshot upload to Google Drive
+- doGet(): Mobile quiz webapp delivery
+- Extension integration with QR code generation
+- Pro gating: Free users see 3-second ad
 
-**User-Facing Error Messages**:
-- API failures: "Unable to fetch definition. Word saved with your context."
-- Quota exceeded: "Storage limit reached. Please upgrade to Pro or delete old words."
-- Sync failures: "Unable to sync. Changes saved locally and will retry automatically."
+## Important Implementation Notes
 
-## Security Considerations
+### Type Safety
+Always import types from `@catchvoca/types`:
+```typescript
+import type { WordEntry, ReviewState, EventType, Rating } from '@catchvoca/types';
+```
+Never duplicate type definitions. Use `import type` for type-only imports.
 
-- Never store sensitive data (API keys, tokens) in extension storage
-- Use Firebase Admin SDK server-side for Stripe webhook verification
-- Implement Content Security Policy (CSP) in manifest.json
-- Sanitize user input before IndexedDB storage to prevent XSS
-- Pro status verification must happen server-side (Firebase Functions)
+### Repository Access Pattern
+Never call Dexie directly. Always use repositories:
+```typescript
+// ✅ Correct
+import { wordRepository } from '@catchvoca/core';
+await wordRepository.create({ word: 'example', ... });
+
+// ❌ Wrong
+import { db } from '@catchvoca/core';
+await db.wordEntries.add({ ... });
+```
+
+### Word ID Generation
+WordEntry IDs follow the format `${normalizedWord}::${url}`:
+```typescript
+import { generateWordId, normalizeWord, normalizeUrl } from '@catchvoca/core';
+const id = generateWordId(normalizeWord('Hello'), normalizeUrl('https://example.com'));
+// Result: "hello::https://example.com"
+```
+
+This enables:
+1. Duplicate detection from same source
+2. Re-learning detection (same word from different sources)
+3. Efficient lookups
+
+### Testing Best Practices
+1. Use `fake-indexeddb` for all database tests
+2. Create MockBroadcastChannel for EventBus tests
+3. Reset database between tests: `await db.delete()` then `db = new CheckVocaDB()`
+4. Test edge cases: empty inputs, max length strings, special characters
+5. Validate auto-generated fields: createdAt, updatedAt, normalizedWord
