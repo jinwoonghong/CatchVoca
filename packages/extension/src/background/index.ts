@@ -370,7 +370,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       switch (message.type) {
         case 'LOOKUP_WORD':
           const lookupResult = await lookupWord(message.word);
-          sendResponse({ success: true, data: lookupResult });
+
+          // 기존 단어의 viewCount 조회
+          let viewCount = 0;
+          try {
+            const existingWords = await wordRepository.findByNormalizedWord(message.word);
+            if (existingWords.length > 0 && existingWords[0]) {
+              viewCount = existingWords[0].viewCount || 0;
+            }
+          } catch (err) {
+            console.warn('[CatchVoca] Failed to get viewCount:', err);
+          }
+
+          sendResponse({
+            success: true,
+            data: {
+              ...lookupResult,
+              viewCount
+            }
+          });
           break;
 
         case 'SAVE_WORD':

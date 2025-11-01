@@ -298,6 +298,21 @@ function updateTooltipContent(word: string, result: LookupResult): void {
       `).join('')
     : '<div style="color: #9ca3af;">정의를 찾을 수 없습니다.</div>';
 
+  // 조회수 HTML (viewCount가 0보다 크면 표시)
+  const viewCountHtml = result.viewCount && result.viewCount > 0
+    ? `<span style="
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: #f3f4f6;
+        color: #4b5563;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        margin-left: 8px;
+      " title="${result.viewCount}번 조회">👁️ ${result.viewCount}</span>`
+    : '';
+
   tooltip.innerHTML = `
     <div style="position: relative;">
       <button id="catchvoca-close-btn" style="
@@ -318,7 +333,10 @@ function updateTooltipContent(word: string, result: LookupResult): void {
         padding: 0;
         line-height: 1;
       " title="닫기">×</button>
-      <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">${word}</div>
+      <div style="display: flex; align-items: center; margin-bottom: 4px;">
+        <div style="font-weight: 600; font-size: 16px;">${word}</div>
+        ${viewCountHtml}
+      </div>
       ${phoneticHtml}
       <div style="border-top: 1px solid #e5e7eb; padding-top: 8px; margin-top: 8px;">
         ${definitionsHtml}

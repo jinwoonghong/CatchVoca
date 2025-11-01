@@ -131,6 +131,7 @@ export interface LookupResult {
   definitions: string[]; // 정의 목록
   phonetic?: string; // 발음기호
   audioUrl?: string; // 발음 오디오 URL
+  viewCount?: number; // 조회 횟수 (기존 단어인 경우)
 }
 
 /**
