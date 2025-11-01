@@ -341,17 +341,30 @@ function updateTooltipContent(word: string, result: LookupResult): void {
       <div style="border-top: 1px solid #e5e7eb; padding-top: 8px; margin-top: 8px;">
         ${definitionsHtml}
       </div>
-      <button id="catchvoca-save-btn" style="
-        background: #10b981;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 6px 12px;
-        cursor: pointer;
-        font-size: 13px;
-        margin-top: 8px;
-        width: 100%;
-      ">💾 CatchVoca에 저장</button>
+      ${result.isSaved
+        ? `<button id="catchvoca-saved-btn" style="
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 8px;
+            width: 100%;
+          ">✅ 저장됨 (라이브러리에서 관리)</button>`
+        : `<button id="catchvoca-save-btn" style="
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 8px;
+            width: 100%;
+          ">💾 CatchVoca에 저장</button>`
+      }
     </div>
   `;
 
@@ -374,33 +387,50 @@ function updateTooltipContent(word: string, result: LookupResult): void {
     });
   }
 
-  // 저장 버튼 이벤트
-  const saveBtn = tooltip.querySelector('#catchvoca-save-btn');
-  saveBtn?.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const wordData = extractWordData(word);
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'SAVE_WORD',
-        wordData: {
-          ...wordData,
-          definitions: result.definitions,
-          phonetic: result.phonetic,
-          audioUrl: result.audioUrl,
-        },
+  // 저장됨 버튼 이벤트 (라이브러리 탭으로 이동)
+  if (result.isSaved) {
+    const savedBtn = tooltip.querySelector('#catchvoca-saved-btn');
+    savedBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      // Popup 열기 (라이브러리 탭)
+      chrome.runtime.sendMessage({
+        type: 'OPEN_LIBRARY',
+        wordId: result.wordId
       });
 
-      if (response.success) {
-        updateTooltipSuccess();
-      } else {
-        updateTooltipError('저장에 실패했습니다.');
+      removeTooltip();
+    });
+  } else {
+    // 저장 버튼 이벤트
+    const saveBtn = tooltip.querySelector('#catchvoca-save-btn');
+    saveBtn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const wordData = extractWordData(word);
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'SAVE_WORD',
+          wordData: {
+            ...wordData,
+            definitions: result.definitions,
+            phonetic: result.phonetic,
+            audioUrl: result.audioUrl,
+          },
+        });
+
+        if (response.success) {
+          updateTooltipSuccess();
+        } else {
+          updateTooltipError('저장에 실패했습니다.');
+        }
+      } catch (error) {
+        console.error('[CatchVoca] Save error:', error);
+        updateTooltipError('저장 중 오류가 발생했습니다.');
       }
-    } catch (error) {
-      console.error('[CatchVoca] Save error:', error);
-      updateTooltipError('저장 중 오류가 발생했습니다.');
-    }
-  });
+    });
+  }
 }
 
 /**

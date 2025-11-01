@@ -132,6 +132,8 @@ export interface LookupResult {
   phonetic?: string; // 발음기호
   audioUrl?: string; // 발음 오디오 URL
   viewCount?: number; // 조회 횟수 (기존 단어인 경우)
+  isSaved?: boolean; // 이미 저장된 단어 여부
+  wordId?: string; // 저장된 단어의 ID (isSaved가 true인 경우)
 }
 
 /**

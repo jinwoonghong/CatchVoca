@@ -371,22 +371,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         case 'LOOKUP_WORD':
           const lookupResult = await lookupWord(message.word);
 
-          // 기존 단어의 viewCount 조회
+          // 기존 단어의 viewCount 및 저장 여부 조회
           let viewCount = 0;
+          let isSaved = false;
+          let wordId: string | undefined;
           try {
             const existingWords = await wordRepository.findByNormalizedWord(message.word);
             if (existingWords.length > 0 && existingWords[0]) {
               viewCount = existingWords[0].viewCount || 0;
+              isSaved = true;
+              wordId = existingWords[0].id;
             }
           } catch (err) {
-            console.warn('[CatchVoca] Failed to get viewCount:', err);
+            console.warn('[CatchVoca] Failed to get word info:', err);
           }
 
           sendResponse({
             success: true,
             data: {
               ...lookupResult,
-              viewCount
+              viewCount,
+              isSaved,
+              wordId
             }
           });
           break;
@@ -530,6 +536,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           const allReviewsToDelete = await reviewStateRepository.findAll();
           await Promise.all(allReviewsToDelete.map((r) => reviewStateRepository.delete(r.id)));
           sendResponse({ success: true });
+          break;
+
+        case 'OPEN_LIBRARY':
+          // Popup 열기 (라이브러리 탭으로 이동)
+          try {
+            await chrome.action.openPopup();
+            // Popup이 열린 후 라이브러리 탭으로 전환하는 메시지 전송
+            // (Popup에서 수신하여 처리)
+            chrome.runtime.sendMessage({
+              type: 'SWITCH_TO_LIBRARY',
+              wordId: message.wordId
+            }).catch(() => {
+              // Popup이 아직 로드되지 않은 경우 무시
+            });
+            sendResponse({ success: true });
+          } catch (err) {
+            console.error('[CatchVoca] Failed to open popup:', err);
+            sendResponse({ success: false, error: 'Failed to open popup' });
+          }
           break;
 
         case 'UPLOAD_SNAPSHOT':

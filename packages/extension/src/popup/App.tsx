@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CollectTab } from './components/CollectTab';
 import { ReviewTab } from './components/ReviewTab';
 import { LibraryTab } from './components/LibraryTab';
@@ -8,6 +8,21 @@ type Tab = 'collect' | 'review' | 'library' | 'settings';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('collect');
+
+  // SWITCH_TO_LIBRARY 메시지 수신
+  useEffect(() => {
+    const handleMessage = (message: any) => {
+      if (message.type === 'SWITCH_TO_LIBRARY') {
+        setActiveTab('library');
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleMessage);
+
+    return () => {
+      chrome.runtime.onMessage.removeListener(handleMessage);
+    };
+  }, []);
 
   return (
     <div className="w-full h-full bg-gray-50">
