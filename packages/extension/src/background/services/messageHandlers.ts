@@ -127,6 +127,19 @@ export async function handleMessage(
         await handleCalculateWordImportance(message, sendResponse);
         break;
 
+      // PDF & Keyboard 관련 핸들러 (Phase 2-C)
+      case 'PDF_TEXT_SELECTED':
+        await handlePDFTextSelected(message, sendResponse);
+        break;
+
+      case 'QUICK_LOOKUP':
+        await handleQuickLookup(message, sendResponse);
+        break;
+
+      case 'QUICK_SAVE':
+        await handleQuickSave(message, sendResponse);
+        break;
+
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }
@@ -577,6 +590,125 @@ async function handleCalculateWordImportance(
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Calculation failed',
+    });
+  }
+}
+
+/**
+ * PDF 텍스트 선택 핸들러
+ */
+async function handlePDFTextSelected(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { text, pageInfo } = message.data;
+
+    logger.info('PDF text selected', {
+      text: text.substring(0, 50),
+      page: pageInfo.pageNumber,
+      pdfTitle: pageInfo.pdfTitle,
+    });
+
+    // 단어 조회 (일반 텍스트 선택과 동일)
+    const lookupResult = await lookupWord(text);
+    const wordInfo = await getWordInfo(text);
+
+    sendResponse({
+      success: true,
+      data: {
+        ...lookupResult,
+        isSaved: wordInfo.isSaved,
+        wordId: wordInfo.wordId,
+        viewCount: wordInfo.viewCount,
+        pdfPageInfo: pageInfo,
+      },
+    });
+  } catch (error) {
+    logger.error('PDF text selection handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'PDF selection failed',
+    });
+  }
+}
+
+/**
+ * 빠른 조회 핸들러 (Ctrl/Alt + 클릭)
+ */
+async function handleQuickLookup(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { word } = message.data;
+
+    logger.info('Quick lookup requested', { word });
+
+    // 단어 조회
+    const lookupResult = await lookupWord(word);
+    const wordInfo = await getWordInfo(word);
+
+    // 조회수 증가
+    if (wordInfo.isSaved) {
+      await incrementWordViewCount(word);
+    }
+
+    sendResponse({
+      success: true,
+      data: {
+        ...lookupResult,
+        isSaved: wordInfo.isSaved,
+        wordId: wordInfo.wordId,
+        viewCount: wordInfo.isSaved ? wordInfo.viewCount + 1 : 0,
+      },
+    });
+  } catch (error) {
+    logger.error('Quick lookup handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Quick lookup failed',
+    });
+  }
+}
+
+/**
+ * 빠른 저장 핸들러 (Alt + 클릭)
+ */
+async function handleQuickSave(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { word, context, url, sourceTitle } = message.data;
+
+    logger.info('Quick save requested', { word });
+
+    // 단어 조회 후 저장
+    const lookupResult = await lookupWord(word);
+
+    const wordData = {
+      word,
+      context: context || word,
+      url: url || '',
+      sourceTitle: sourceTitle || 'Quick Save',
+      definitions: lookupResult.definitions || [],
+      phonetic: lookupResult.phonetic,
+      audioUrl: lookupResult.audioUrl,
+      language: 'en',
+    };
+
+    const result = await saveWord(wordData);
+
+    sendResponse({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error('Quick save handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Quick save failed',
     });
   }
 }

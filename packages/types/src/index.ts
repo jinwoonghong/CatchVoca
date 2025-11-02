@@ -204,6 +204,50 @@ export interface AppsScriptResponse {
 }
 
 // ============================================================================
+// PDF Support Types
+// ============================================================================
+
+/**
+ * PDF 페이지 정보
+ */
+export interface PDFPageInfo {
+  pageNumber: number;
+  totalPages: number;
+  pdfUrl: string;
+  pdfTitle: string;
+}
+
+/**
+ * PDF 텍스트 선택 정보
+ */
+export interface PDFTextSelection {
+  text: string;
+  pageInfo: PDFPageInfo;
+  boundingRect: DOMRect;
+}
+
+// ============================================================================
+// Keyboard Shortcut Types
+// ============================================================================
+
+/**
+ * 특수키 조합 설정
+ */
+export interface KeyboardShortcut {
+  enabled: boolean;
+  key: 'ctrl' | 'alt' | 'shift'; // 조합할 키
+  requiresClick: boolean; // 클릭 필요 여부
+}
+
+/**
+ * 키보드 단축키 설정
+ */
+export interface KeyboardSettings {
+  quickLookup: KeyboardShortcut; // Ctrl/Alt + 클릭으로 즉시 조회
+  quickSave: KeyboardShortcut; // Ctrl/Alt + 클릭으로 즉시 저장
+}
+
+// ============================================================================
 // Event Bus Types
 // ============================================================================
 
@@ -357,6 +401,10 @@ export interface Settings {
   // AI 설정 (Phase 2-B)
   aiAnalysisEnabled: boolean; // AI 분석 활성화
   highlightSettings: HighlightSettings; // 하이라이트 설정
+
+  // 편의 기능 설정 (Phase 2-C)
+  pdfSupportEnabled: boolean; // PDF 지원 활성화
+  keyboardSettings: KeyboardSettings; // 키보드 단축키 설정
 }
 
 /**
@@ -377,6 +425,19 @@ export const DEFAULT_SETTINGS: Settings = {
     learnedColor: '#4ade80',
     recommendedColor: '#fbbf24',
     showTooltip: true,
+  },
+  pdfSupportEnabled: true,
+  keyboardSettings: {
+    quickLookup: {
+      enabled: true,
+      key: 'ctrl',
+      requiresClick: true,
+    },
+    quickSave: {
+      enabled: true,
+      key: 'alt',
+      requiresClick: true,
+    },
   },
 };
 

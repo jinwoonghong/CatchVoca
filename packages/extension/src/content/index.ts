@@ -5,6 +5,8 @@
 
 import type { WordEntryInput, LookupResult } from '@catchvoca/types';
 import { initializeAIHighlighter } from './aiHighlighter';
+import { initializePDFTextHandler } from './pdfTextHandler';
+import { initializeKeyboardManager } from './keyboardManager';
 
 // 툴팁 요소
 let tooltip: HTMLDivElement | null = null;
@@ -478,5 +480,11 @@ function removeTooltip(): void {
 
 // AI Highlighter 초기화
 initializeAIHighlighter();
+
+// PDF Text Handler 초기화
+initializePDFTextHandler();
+
+// Keyboard Manager 초기화
+initializeKeyboardManager();
 
 console.log('[CatchVoca] Content script loaded');
