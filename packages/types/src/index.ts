@@ -278,6 +278,63 @@ export const AI_USAGE_LIMITS = {
 } as const;
 
 /**
+ * Gemini API 분석 요청
+ */
+export interface GeminiAnalysisRequest {
+  pageUrl: string; // 페이지 URL
+  pageTitle: string; // 페이지 제목
+  pageContent: string; // 페이지 본문 (최대 5000자)
+  userWords: string[]; // 사용자가 이미 학습한 단어 목록
+}
+
+/**
+ * Gemini API 분석 응답
+ */
+export interface GeminiAnalysisResponse {
+  summary: string; // AI 요약 (500자 이내)
+  recommendedWords: RecommendedWord[]; // 추천 단어 목록
+  difficulty: 'beginner' | 'intermediate' | 'advanced'; // 난이도
+}
+
+/**
+ * AI 추천 단어
+ */
+export interface RecommendedWord {
+  word: string; // 단어
+  normalizedWord: string; // 정규화된 단어
+  importanceScore: number; // 중요도 점수 (0-100)
+  reasons: string[]; // 추천 이유 목록
+}
+
+/**
+ * 단어 중요도 점수 구성 요소
+ */
+export interface WordImportance {
+  word: string;
+  normalizedWord: string;
+  cocaScore: number; // COCA 빈도 점수 (0-40)
+  awlScore: number; // Academic Word List 점수 (0-30)
+  testScore: number; // 토익/토플 점수 (0-20)
+  contextScore: number; // Gemini 문맥 점수 (0-10, Pro만)
+  totalScore: number; // 총점 (0-100)
+}
+
+/**
+ * AI 하이라이트 타입
+ */
+export type HighlightType = 'learned' | 'recommended' | 'none';
+
+/**
+ * AI 하이라이트 설정
+ */
+export interface HighlightSettings {
+  enabled: boolean; // 하이라이트 활성화
+  learnedColor: string; // 학습 완료 색상 (기본: #4ade80)
+  recommendedColor: string; // 추천 단어 색상 (기본: #fbbf24)
+  showTooltip: boolean; // 툴팁 표시 여부
+}
+
+/**
  * 사용자 설정
  */
 export interface Settings {
@@ -296,6 +353,10 @@ export interface Settings {
   // UI 설정
   theme: 'light' | 'dark' | 'auto'; // 테마 설정
   compactMode: boolean; // 컴팩트 모드
+
+  // AI 설정 (Phase 2-B)
+  aiAnalysisEnabled: boolean; // AI 분석 활성화
+  highlightSettings: HighlightSettings; // 하이라이트 설정
 }
 
 /**
@@ -310,6 +371,13 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultTags: [],
   theme: 'light',
   compactMode: false,
+  aiAnalysisEnabled: true,
+  highlightSettings: {
+    enabled: true,
+    learnedColor: '#4ade80',
+    recommendedColor: '#fbbf24',
+    showTooltip: true,
+  },
 };
 
 // ============================================================================
