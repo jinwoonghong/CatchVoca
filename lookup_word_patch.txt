@@ -1,0 +1,52 @@
+이 파일의 내용을 background/index.ts의 LOOKUP_WORD 케이스에 적용하세요.
+
+Line 430-443을 아래 코드로 교체:
+
+          // 기존 단어의 viewCount, 저장 여부, 복습 상태 조회
+          let viewCount = 0;
+          let isSaved = false;
+          let wordId: string | undefined;
+          let wordReviewState: LookupResult['reviewState'] | undefined;
+          try {
+            const existingWords = await wordRepository.findByNormalizedWord(message.word);
+            if (existingWords.length > 0 && existingWords[0]) {
+              viewCount = existingWords[0].viewCount || 0;
+              isSaved = true;
+              wordId = existingWords[0].id;
+
+              // 복습 상태 조회 (재학습 지원)
+              try {
+                const review = await reviewStateRepository.findByWordId(wordId);
+                if (review) {
+                  const lastReviewLog = review.history.length > 0
+                    ? review.history[review.history.length - 1]
+                    : undefined;
+
+                  wordReviewState = {
+                    lastReviewedAt: lastReviewLog?.reviewedAt,
+                    repetitions: review.repetitions,
+                    easeFactor: review.easeFactor,
+                    nextReviewAt: review.nextReviewAt,
+                    isDue: review.nextReviewAt <= Date.now(),
+                  };
+                }
+              } catch (reviewErr) {
+                console.warn('[CatchVoca] Failed to get review state:', reviewErr);
+              }
+            }
+          } catch (err) {
+            console.warn('[CatchVoca] Failed to get word info:', err);
+          }
+
+그리고 Line 451에서:
+              wordId
+            }
+          });
+
+이 부분을:
+              wordId,
+              reviewState: wordReviewState
+            }
+          });
+
+이렇게 수정하세요.

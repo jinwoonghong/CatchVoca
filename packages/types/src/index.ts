@@ -262,6 +262,22 @@ export interface ProStatus {
 }
 
 /**
+ * AI 분석 일일 사용량 (Phase 2)
+ */
+export interface AIUsage {
+  date: string; // 날짜 (YYYY-MM-DD 형식)
+  count: number; // 사용 횟수
+}
+
+/**
+ * AI 분석 사용량 제한 상수
+ */
+export const AI_USAGE_LIMITS = {
+  FREE_DAILY_LIMIT: 3, // 무료 사용자 일일 한도
+  PRO_DAILY_LIMIT: -1, // Pro 사용자 무제한 (-1)
+} as const;
+
+/**
  * 사용자 설정
  */
 export interface Settings {
