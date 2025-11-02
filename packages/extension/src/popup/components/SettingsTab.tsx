@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import type { Settings } from '@catchvoca/types';
 import { DEFAULT_SETTINGS } from '@catchvoca/types';
+import QRCode from 'qrcode';
 
 export function SettingsTab() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -19,6 +20,7 @@ export function SettingsTab() {
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [mobileUrl, setMobileUrl] = useState<string | null>(null);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
 
   /**
    * 설정 로드
@@ -182,25 +184,57 @@ export function SettingsTab() {
   };
 
   /**
-   * 모바일 퀴즈 스냅샷 업로드
+   * 모바일 퀴즈 URL 생성 (URL Hash 기반)
    */
-  const handleUploadSnapshot = async () => {
+  const handleGenerateMobileQuiz = async () => {
     setIsUploading(true);
     setMobileUrl(null);
 
     try {
+      // 1. 복습 대상 단어 가져오기
       const response = await chrome.runtime.sendMessage({
-        type: 'UPLOAD_SNAPSHOT',
+        type: 'GET_DUE_REVIEWS',
+        limit: 20,
       });
 
-      if (response.success) {
-        setMobileUrl(response.data.mobileUrl);
+      if (response.success && response.data.length > 0) {
+        // 2. 단어 데이터를 Base64로 인코딩
+        const quizData = response.data.map((word: any) => ({
+          id: word.id,
+          word: word.word,
+          definitions: word.definitions,
+          phonetic: word.phonetic,
+        }));
+
+        const jsonStr = JSON.stringify(quizData);
+        const base64Data = btoa(unescape(encodeURIComponent(jsonStr)));
+
+        // 3. URL Hash 생성
+        const extensionId = chrome.runtime.id;
+        const quizUrl = `chrome-extension://${extensionId}/quiz.html#${base64Data}`;
+
+        setMobileUrl(quizUrl);
+
+        // 4. QR 코드 생성
+        try {
+          const qrDataUrl = await QRCode.toDataURL(quizUrl, {
+            width: 256,
+            margin: 2,
+            color: {
+              dark: '#000000',
+              light: '#FFFFFF',
+            },
+          });
+          setQrCodeDataUrl(qrDataUrl);
+        } catch (qrErr) {
+          console.error('[SettingsTab] QR code generation error:', qrErr);
+        }
       } else {
-        alert('스냅샷 업로드에 실패했습니다.');
+        alert('복습할 단어가 없습니다. 먼저 단어를 저장해주세요!');
       }
     } catch (err) {
-      alert('스냅샷 업로드 중 오류가 발생했습니다.');
-      console.error('[SettingsTab] Upload snapshot error:', err);
+      alert('모바일 퀴즈 생성 중 오류가 발생했습니다.');
+      console.error('[SettingsTab] Generate mobile quiz error:', err);
     } finally {
       setIsUploading(false);
     }
@@ -407,38 +441,60 @@ export function SettingsTab() {
       <div className="space-y-3">
         <h3 className="text-lg font-semibold text-gray-900">📱 모바일 퀴즈</h3>
         <p className="text-sm text-gray-600">
-          Google Apps Script로 모바일에서 간편하게 복습하세요
+          URL 링크로 모바일에서 간편하게 복습하세요
         </p>
 
         <button
-          onClick={handleUploadSnapshot}
+          onClick={handleGenerateMobileQuiz}
           disabled={isUploading}
           className="w-full px-4 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
         >
-          {isUploading ? '업로드 중...' : '📤 모바일 퀴즈 생성'}
+          {isUploading ? '생성 중...' : '🔗 모바일 퀴즈 링크 생성'}
         </button>
 
         {mobileUrl && (
-          <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-            <p className="text-sm text-green-800 font-medium mb-2">
+          <div className="p-4 bg-green-50 border border-green-200 rounded-md space-y-3">
+            <p className="text-sm text-green-800 font-medium">
               ✅ 모바일 퀴즈가 생성되었습니다!
             </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={mobileUrl}
-                readOnly
-                className="flex-1 px-3 py-2 text-sm bg-white border border-green-300 rounded-md"
-              />
-              <button
-                onClick={handleCopyUrl}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm whitespace-nowrap"
-              >
-                복사
-              </button>
+
+            {/* QR 코드 */}
+            {qrCodeDataUrl && (
+              <div className="flex justify-center">
+                <div className="p-3 bg-white rounded-lg shadow-sm">
+                  <img
+                    src={qrCodeDataUrl}
+                    alt="QR Code"
+                    className="w-48 h-48"
+                  />
+                  <p className="text-xs text-center text-gray-600 mt-2">
+                    📱 모바일로 스캔하세요
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* URL */}
+            <div>
+              <p className="text-xs text-gray-700 mb-1 font-medium">또는 URL 직접 복사:</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={mobileUrl}
+                  readOnly
+                  className="flex-1 px-3 py-2 text-xs bg-white border border-green-300 rounded-md"
+                />
+                <button
+                  onClick={handleCopyUrl}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm whitespace-nowrap"
+                >
+                  복사
+                </button>
+              </div>
             </div>
-            <p className="text-xs text-green-700 mt-2">
-              💡 이 URL을 모바일 브라우저에서 열어 복습하세요
+
+            <p className="text-xs text-green-700">
+              💡 QR 코드를 스캔하거나 URL을 복사하여 모바일 브라우저에서 열어 복습하세요
             </p>
           </div>
         )}

@@ -15,6 +15,8 @@ export function CollectTab() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showRelearningDialog, setShowRelearningDialog] = useState(false);
+  const [existingWordId, setExistingWordId] = useState<string | null>(null);
 
   /**
    * 단어 검색 핸들러
@@ -51,7 +53,7 @@ export function CollectTab() {
   };
 
   /**
-   * 단어 저장 핸들러
+   * 단어 저장 핸들러 (재학습 체크 포함)
    */
   const handleSave = async () => {
     if (!searchWord.trim() || !lookupResult) {
@@ -62,7 +64,38 @@ export function CollectTab() {
     setError(null);
 
     try {
-      // Background Worker에 저장 요청
+      // 1. 기존 단어 존재 여부 확인
+      const checkResponse = await chrome.runtime.sendMessage({
+        type: 'LOOKUP_WORD',
+        word: searchWord.trim(),
+      });
+
+      if (checkResponse.success && checkResponse.data.isSaved && checkResponse.data.wordId) {
+        // 기존 단어가 있으면 재학습 다이얼로그 표시
+        setExistingWordId(checkResponse.data.wordId);
+        setShowRelearningDialog(true);
+        setIsSaving(false);
+        return;
+      }
+
+      // 2. 새 단어 저장
+      await saveNewWord();
+    } catch (err) {
+      setError('저장 중 오류가 발생했습니다.');
+      console.error('[CollectTab] Save error:', err);
+      setIsSaving(false);
+    }
+  };
+
+  /**
+   * 새 단어 저장
+   */
+  const saveNewWord = async () => {
+    if (!searchWord.trim() || !lookupResult) {
+      return;
+    }
+
+    try {
       const response = await chrome.runtime.sendMessage({
         type: 'SAVE_WORD',
         wordData: {
@@ -84,10 +117,53 @@ export function CollectTab() {
       }
     } catch (err) {
       setError('저장 중 오류가 발생했습니다.');
-      console.error('[CollectTab] Save error:', err);
+      console.error('[CollectTab] Save new word error:', err);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  /**
+   * 재학습 - 이전 기록 유지
+   */
+  const handleKeepExisting = () => {
+    setShowRelearningDialog(false);
+    setExistingWordId(null);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  /**
+   * 재학습 - 새로 시작
+   */
+  const handleStartNew = async () => {
+    setShowRelearningDialog(false);
+    setIsSaving(true);
+
+    try {
+      // 기존 단어 삭제 후 새로 저장
+      if (existingWordId) {
+        await chrome.runtime.sendMessage({
+          type: 'DELETE_WORD',
+          wordId: existingWordId,
+        });
+      }
+
+      await saveNewWord();
+    } catch (err) {
+      setError('재학습 중 오류가 발생했습니다.');
+      console.error('[CollectTab] Restart learning error:', err);
+    } finally {
+      setExistingWordId(null);
+    }
+  };
+
+  /**
+   * 재학습 다이얼로그 취소
+   */
+  const handleCancelRelearning = () => {
+    setShowRelearningDialog(false);
+    setExistingWordId(null);
   };
 
   /**
@@ -113,6 +189,40 @@ export function CollectTab() {
 
   return (
     <div className="space-y-4">
+      {/* 재학습 확인 다이얼로그 */}
+      {showRelearningDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              이미 학습 중인 단어입니다
+            </h3>
+            <p className="text-gray-600 mb-4">
+              "{searchWord}"는 이미 저장된 단어입니다. 어떻게 하시겠습니까?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleKeepExisting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                📚 이전 기록 유지 (그대로 학습 계속)
+              </button>
+              <button
+                onClick={handleStartNew}
+                className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700"
+              >
+                🔄 새로 시작 (기록 초기화)
+              </button>
+              <button
+                onClick={handleCancelRelearning}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 검색 입력 */}
       <div className="flex gap-2">
         <input

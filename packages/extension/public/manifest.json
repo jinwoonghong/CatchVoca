@@ -42,5 +42,28 @@
         "path": "rules/rule_endic.json"
       }
     ]
+  },
+
+  "commands": {
+    "save-word": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Save selected word to CatchVoca"
+    },
+    "start-quiz": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Q",
+        "mac": "Command+Shift+Q"
+      },
+      "description": "Start quiz session"
+    },
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+V",
+        "mac": "Command+Shift+V"
+      }
+    }
   }
 }

@@ -9,11 +9,13 @@ type Tab = 'collect' | 'review' | 'library' | 'settings';
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('collect');
 
-  // SWITCH_TO_LIBRARY 메시지 수신
+  // Message handlers for tab switching
   useEffect(() => {
     const handleMessage = (message: any) => {
       if (message.type === 'SWITCH_TO_LIBRARY') {
         setActiveTab('library');
+      } else if (message.type === 'SWITCH_TO_QUIZ') {
+        setActiveTab('review');
       }
     };
 

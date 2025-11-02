@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CatchVoca Mobile Quiz</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .quiz-container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 100%;
+      padding: 32px;
+    }
+
+    .quiz-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .quiz-header h1 {
+      color: #667eea;
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .quiz-progress {
+      font-size: 16px;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    .word-card {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+
+    .word {
+      font-size: 36px;
+      font-weight: bold;
+      color: #1e293b;
+      margin-bottom: 12px;
+    }
+
+    .phonetic {
+      font-size: 18px;
+      color: #64748b;
+      font-style: italic;
+      margin-bottom: 20px;
+    }
+
+    .definitions {
+      text-align: left;
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+    }
+
+    .definitions h3 {
+      font-size: 16px;
+      color: #475569;
+      margin-bottom: 12px;
+    }
+
+    .definitions ol {
+      padding-left: 24px;
+    }
+
+    .definitions li {
+      font-size: 15px;
+      color: #334155;
+      margin-bottom: 8px;
+      line-height: 1.6;
+    }
+
+    .rating-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .rating-btn {
+      padding: 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .rating-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .rating-btn:active {
+      transform: translateY(0);
+    }
+
+    .rating-again {
+      background: #ef4444;
+      color: white;
+    }
+
+    .rating-hard {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .rating-good {
+      background: #10b981;
+      color: white;
+    }
+
+    .rating-easy {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .complete-screen {
+      text-align: center;
+      padding: 40px 0;
+    }
+
+    .complete-screen h2 {
+      font-size: 32px;
+      color: #10b981;
+      margin-bottom: 16px;
+    }
+
+    .complete-screen p {
+      font-size: 18px;
+      color: #64748b;
+      margin-bottom: 32px;
+    }
+
+    .restart-btn {
+      background: #667eea;
+      color: white;
+      padding: 16px 32px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .restart-btn:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .error-screen {
+      text-align: center;
+      padding: 40px 0;
+    }
+
+    .error-screen h2 {
+      font-size: 24px;
+      color: #ef4444;
+      margin-bottom: 16px;
+    }
+
+    .error-screen p {
+      font-size: 16px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="quiz-container">
+    <div class="quiz-header">
+      <h1>🎯 CatchVoca Quiz</h1>
+      <div class="quiz-progress" id="progress">준비 중...</div>
+    </div>
+
+    <div id="quiz-content">
+      <!-- 퀴즈 내용이 여기에 동적으로 생성됩니다 -->
+    </div>
+  </div>
+
+  <script>
+    // URL Hash에서 데이터 추출
+    function loadQuizData() {
+      try {
+        const hash = window.location.hash.substring(1);
+        if (!hash) {
+          throw new Error('퀴즈 데이터가 없습니다.');
+        }
+
+        const jsonStr = decodeURIComponent(escape(atob(hash)));
+        const quizData = JSON.parse(jsonStr);
+
+        if (!Array.isArray(quizData) || quizData.length === 0) {
+          throw new Error('유효하지 않은 퀴즈 데이터입니다.');
+        }
+
+        return quizData;
+      } catch (error) {
+        console.error('Failed to load quiz data:', error);
+        return null;
+      }
+    }
+
+    // 퀴즈 상태
+    let quizData = [];
+    let currentIndex = 0;
+
+    // 퀴즈 초기화
+    function initQuiz() {
+      quizData = loadQuizData();
+
+      if (!quizData) {
+        showError();
+        return;
+      }
+
+      currentIndex = 0;
+      renderQuiz();
+    }
+
+    // 퀴즈 렌더링
+    function renderQuiz() {
+      const progress = document.getElementById('progress');
+      const content = document.getElementById('quiz-content');
+
+      if (currentIndex >= quizData.length) {
+        showComplete();
+        return;
+      }
+
+      const word = quizData[currentIndex];
+      progress.textContent = `${currentIndex + 1} / ${quizData.length}`;
+
+      content.innerHTML = `
+        <div class="word-card">
+          <div class="word">${escapeHtml(word.word)}</div>
+          ${word.phonetic ? `<div class="phonetic">${escapeHtml(word.phonetic)}</div>` : ''}
+
+          <div class="definitions">
+            <h3>정의</h3>
+            <ol>
+              ${word.definitions.map(def => `<li>${escapeHtml(def)}</li>`).join('')}
+            </ol>
+          </div>
+        </div>
+
+        <div class="rating-buttons">
+          <button class="rating-btn rating-again" onclick="handleRating(1)">
+            😰 다시
+          </button>
+          <button class="rating-btn rating-hard" onclick="handleRating(2)">
+            😓 어려움
+          </button>
+          <button class="rating-btn rating-good" onclick="handleRating(3)">
+            😊 괜찮음
+          </button>
+          <button class="rating-btn rating-easy" onclick="handleRating(4)">
+            😎 쉬움
+          </button>
+        </div>
+      `;
+    }
+
+    // 평가 처리
+    function handleRating(rating) {
+      // TODO: 나중에 복습 결과를 Extension으로 전달할 수 있음
+      console.log('Rating:', quizData[currentIndex].word, rating);
+
+      currentIndex++;
+      renderQuiz();
+    }
+
+    // 완료 화면
+    function showComplete() {
+      const content = document.getElementById('quiz-content');
+      content.innerHTML = `
+        <div class="complete-screen">
+          <h2>🎉 완료!</h2>
+          <p>모든 단어를 복습했습니다.<br/>훌륭합니다!</p>
+          <button class="restart-btn" onclick="restartQuiz()">
+            🔄 처음부터 다시
+          </button>
+        </div>
+      `;
+    }
+
+    // 오류 화면
+    function showError() {
+      const content = document.getElementById('quiz-content');
+      content.innerHTML = `
+        <div class="error-screen">
+          <h2>⚠️ 오류</h2>
+          <p>퀴즈 데이터를 불러올 수 없습니다.<br/>QR 코드를 다시 스캔해주세요.</p>
+        </div>
+      `;
+    }
+
+    // 퀴즈 재시작
+    function restartQuiz() {
+      currentIndex = 0;
+      renderQuiz();
+    }
+
+    // HTML 이스케이프
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // 페이지 로드 시 퀴즈 초기화
+    initQuiz();
+  </script>
+</body>
+</html>

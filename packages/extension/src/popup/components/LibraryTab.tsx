@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import type { WordEntry } from '@catchvoca/types';
+import { useDebounce } from '../hooks/useDebounce';
 
 interface EditingWord {
   id: string;
@@ -27,6 +28,9 @@ export function LibraryTab() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
+  // Debounced search query (300ms)
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+
   /**
    * 단어 목록 가져오기
    */
@@ -35,7 +39,7 @@ export function LibraryTab() {
   }, []);
 
   /**
-   * 검색 및 필터링
+   * 검색 및 필터링 (debounced)
    */
   useEffect(() => {
     let filtered = words;
@@ -52,9 +56,9 @@ export function LibraryTab() {
       );
     }
 
-    // 검색어 필터
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    // 검색어 필터 (debounced)
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase();
       filtered = filtered.filter(
         (word) =>
           word.word.toLowerCase().includes(query) ||
@@ -64,7 +68,7 @@ export function LibraryTab() {
     }
 
     setFilteredWords(filtered);
-  }, [searchQuery, words, selectedTags, showFavoritesOnly]);
+  }, [debouncedSearchQuery, words, selectedTags, showFavoritesOnly]);
 
   const loadWords = async () => {
     setIsLoading(true);

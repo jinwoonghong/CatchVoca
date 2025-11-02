@@ -40,6 +40,20 @@ export {
 } from './utils/validation';
 export type { ValidationError } from './utils/validation';
 
+export { logger, Logger, LogLevel } from './utils/logger';
+
+export {
+  CatchVocaError,
+  NetworkError,
+  ValidationError as ValidationException,
+  DatabaseError,
+  withRetry,
+  isErrorType,
+  getErrorMessage,
+  getErrorContext,
+} from './utils/errors';
+export type { RetryConfig } from './utils/errors';
+
 // Services - SM-2 Algorithm
 export {
   calculateNextReview,

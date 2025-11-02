@@ -1,0 +1,427 @@
+/**
+ * Message Handlers
+ * Chrome runtime message 핸들러
+ */
+
+import {
+  wordRepository,
+  reviewStateRepository,
+  eventBus,
+  db,
+  calculateNextReview,
+  validateSnapshotDetailed,
+  Logger,
+} from '@catchvoca/core';
+import type { Rating, Snapshot } from '@catchvoca/types';
+import { lookupWord } from './dictionaryAPI';
+import { saveWord, getWordInfo, incrementWordViewCount } from './wordService';
+import { getSettings, updateSettings } from './storage';
+
+const logger = new Logger('MessageHandler');
+
+type MessageResponse = {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+  details?: unknown;
+};
+
+/**
+ * 메시지 핸들러 라우터
+ */
+export async function handleMessage(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    switch (message.type) {
+      case 'LOOKUP_WORD':
+        await handleLookupWord(message, sendResponse);
+        break;
+
+      case 'SAVE_WORD':
+        await handleSaveWord(message, sendResponse);
+        break;
+
+      case 'GET_ALL_WORDS':
+        await handleGetAllWords(sendResponse);
+        break;
+
+      case 'DELETE_WORD':
+        await handleDeleteWord(message, sendResponse);
+        break;
+
+      case 'UPDATE_WORD':
+        await handleUpdateWord(message, sendResponse);
+        break;
+
+      case 'INCREMENT_VIEW_COUNT':
+        await handleIncrementViewCount(message, sendResponse);
+        break;
+
+      case 'GET_REVIEW_STATS':
+        await handleGetReviewStats(sendResponse);
+        break;
+
+      case 'GET_DUE_REVIEWS':
+        await handleGetDueReviews(message, sendResponse);
+        break;
+
+      case 'START_REVIEW_SESSION':
+        await handleStartReviewSession(message, sendResponse);
+        break;
+
+      case 'SUBMIT_REVIEW':
+        await handleSubmitReview(message, sendResponse);
+        break;
+
+      case 'GET_SETTINGS':
+        await handleGetSettings(sendResponse);
+        break;
+
+      case 'UPDATE_SETTINGS':
+        await handleUpdateSettings(message, sendResponse);
+        break;
+
+      case 'GET_STORAGE_INFO':
+        await handleGetStorageInfo(sendResponse);
+        break;
+
+      case 'EXPORT_DATA':
+        await handleExportData(sendResponse);
+        break;
+
+      case 'IMPORT_DATA':
+        await handleImportData(message, sendResponse);
+        break;
+
+      case 'CLEAR_ALL_DATA':
+        await handleClearAllData(sendResponse);
+        break;
+
+      case 'OPEN_LIBRARY':
+        await handleOpenLibrary(message, sendResponse);
+        break;
+
+      case 'UPLOAD_SNAPSHOT':
+        await handleUploadSnapshot(sendResponse);
+        break;
+
+      default:
+        sendResponse({ success: false, error: 'Unknown message type' });
+    }
+  } catch (error) {
+    logger.error('Message handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+// Individual handlers
+
+async function handleLookupWord(message: any, sendResponse: (response: MessageResponse) => void) {
+  const lookupResult = await lookupWord(message.word);
+  const wordInfo = await getWordInfo(message.word);
+
+  sendResponse({
+    success: true,
+    data: {
+      ...lookupResult,
+      ...wordInfo,
+    },
+  });
+}
+
+async function handleSaveWord(message: any, sendResponse: (response: MessageResponse) => void) {
+  await saveWord(message.wordData);
+  sendResponse({ success: true });
+}
+
+async function handleGetAllWords(sendResponse: (response: MessageResponse) => void) {
+  const words = await wordRepository.findAll();
+  sendResponse({ success: true, data: words });
+}
+
+async function handleDeleteWord(message: any, sendResponse: (response: MessageResponse) => void) {
+  await wordRepository.delete(message.wordId);
+  sendResponse({ success: true });
+}
+
+async function handleUpdateWord(message: any, sendResponse: (response: MessageResponse) => void) {
+  await wordRepository.update(message.wordId, message.changes);
+  sendResponse({ success: true });
+}
+
+async function handleIncrementViewCount(message: any, sendResponse: (response: MessageResponse) => void) {
+  const success = await incrementWordViewCount(message.word);
+  sendResponse({ success });
+}
+
+async function handleGetReviewStats(sendResponse: (response: MessageResponse) => void) {
+  const stats = await reviewStateRepository.getReviewStats();
+  sendResponse({ success: true, data: stats });
+}
+
+async function handleGetDueReviews(message: any, sendResponse: (response: MessageResponse) => void) {
+  const dueReviews = await reviewStateRepository.findDueReviews(message.limit || 20);
+  const dueWords = await Promise.all(
+    dueReviews.map((review) => wordRepository.findById(review.wordId))
+  );
+  sendResponse({ success: true, data: dueWords.filter((w) => w !== null) });
+}
+
+async function handleStartReviewSession(message: any, sendResponse: (response: MessageResponse) => void) {
+  const sessionLimit = message.limit || 20;
+  const sessionDueReviews = await reviewStateRepository.findDueReviews(sessionLimit);
+  const sessionWords = await Promise.all(
+    sessionDueReviews.map((review) => wordRepository.findById(review.wordId))
+  );
+  const validSessionWords = sessionWords.filter((w) => w !== null);
+
+  logger.info('Review session started', {
+    totalDue: sessionDueReviews.length,
+    sessionSize: validSessionWords.length,
+    limit: sessionLimit,
+  });
+
+  sendResponse({ success: true, data: validSessionWords });
+}
+
+async function handleSubmitReview(message: any, sendResponse: (response: MessageResponse) => void) {
+  const reviewState = await reviewStateRepository.findByWordId(message.wordId);
+  if (reviewState) {
+    const rating: Rating = message.rating;
+
+    const sm2Result = calculateNextReview(
+      {
+        interval: reviewState.interval,
+        easeFactor: reviewState.easeFactor,
+        repetitions: reviewState.repetitions,
+      },
+      rating
+    );
+
+    await reviewStateRepository.recordReview(
+      message.wordId,
+      rating,
+      sm2Result.nextReviewAt,
+      sm2Result.interval,
+      sm2Result.easeFactor,
+      sm2Result.repetitions
+    );
+
+    logger.info('SM-2 review recorded', {
+      wordId: message.wordId,
+      rating,
+      interval: sm2Result.interval,
+    });
+  }
+  sendResponse({ success: true });
+}
+
+async function handleGetSettings(sendResponse: (response: MessageResponse) => void) {
+  const settings = await getSettings();
+  sendResponse({ success: true, data: settings });
+}
+
+async function handleUpdateSettings(message: any, sendResponse: (response: MessageResponse) => void) {
+  await updateSettings(message.settings);
+  sendResponse({ success: true });
+}
+
+async function handleGetStorageInfo(sendResponse: (response: MessageResponse) => void) {
+  const allWords = await wordRepository.findAll();
+  sendResponse({
+    success: true,
+    data: {
+      wordCount: allWords.length,
+      storageUsed: '< 1 MB',
+    },
+  });
+}
+
+async function handleExportData(sendResponse: (response: MessageResponse) => void) {
+  const exportWords = await wordRepository.findAll();
+  const exportReviews = await reviewStateRepository.findAll();
+  sendResponse({
+    success: true,
+    data: {
+      words: exportWords,
+      reviews: exportReviews,
+      exportedAt: Date.now(),
+    },
+  });
+}
+
+async function handleImportData(message: any, sendResponse: (response: MessageResponse) => void) {
+  // JSON 파싱 검증
+  let snapshot: Snapshot;
+  try {
+    if (typeof message.data === 'string') {
+      snapshot = JSON.parse(message.data);
+    } else {
+      snapshot = message.data;
+    }
+  } catch (parseError) {
+    logger.error('JSON parse error', parseError);
+    sendResponse({
+      success: false,
+      error: 'Invalid JSON format',
+    });
+    return;
+  }
+
+  // Snapshot 구조 검증
+  const validationErrors = validateSnapshotDetailed(snapshot);
+  if (validationErrors.length > 0) {
+    logger.error('Validation errors', validationErrors);
+    sendResponse({
+      success: false,
+      error: 'Invalid data format',
+      details: validationErrors,
+    });
+    return;
+  }
+
+  // 데이터 가져오기
+  let importedWords = 0;
+  let importedReviews = 0;
+  let skippedWords = 0;
+  let skippedReviews = 0;
+
+  // WordEntry 가져오기
+  for (const wordEntry of snapshot.wordEntries) {
+    try {
+      const existing = await wordRepository.findById(wordEntry.id);
+
+      if (existing) {
+        if (wordEntry.updatedAt > existing.updatedAt) {
+          await db.wordEntries.put({
+            ...wordEntry,
+            updatedAt: Date.now(),
+          });
+          importedWords++;
+        } else {
+          skippedWords++;
+        }
+      } else {
+        await db.wordEntries.add(wordEntry);
+        importedWords++;
+      }
+    } catch (error) {
+      logger.error(`Failed to import word: ${wordEntry.id}`, error);
+      skippedWords++;
+    }
+  }
+
+  // ReviewState 가져오기
+  for (const reviewState of snapshot.reviewStates) {
+    try {
+      const existing = await reviewStateRepository.findById(reviewState.id);
+
+      if (existing) {
+        if (reviewState.history.length > existing.history.length) {
+          await db.reviewStates.put(reviewState);
+          importedReviews++;
+        } else {
+          skippedReviews++;
+        }
+      } else {
+        await db.reviewStates.add(reviewState);
+        importedReviews++;
+      }
+    } catch (error) {
+      logger.error(`Failed to import review state: ${reviewState.id}`, error);
+      skippedReviews++;
+    }
+  }
+
+  sendResponse({
+    success: true,
+    data: {
+      importedWords,
+      importedReviews,
+      skippedWords,
+      skippedReviews,
+      totalWords: snapshot.wordEntries.length,
+      totalReviews: snapshot.reviewStates.length,
+    },
+  });
+
+  eventBus.emit('sync:completed', { importedWords, importedReviews });
+}
+
+async function handleClearAllData(sendResponse: (response: MessageResponse) => void) {
+  const allWordsToDelete = await wordRepository.findAll();
+  await Promise.all(allWordsToDelete.map((w) => wordRepository.delete(w.id)));
+  const allReviewsToDelete = await reviewStateRepository.findAll();
+  await Promise.all(allReviewsToDelete.map((r) => reviewStateRepository.delete(r.id)));
+  sendResponse({ success: true });
+}
+
+async function handleOpenLibrary(message: any, sendResponse: (response: MessageResponse) => void) {
+  try {
+    await chrome.action.openPopup();
+    chrome.runtime.sendMessage({
+      type: 'SWITCH_TO_LIBRARY',
+      wordId: message.wordId,
+    }).catch(() => {
+      // Popup이 아직 로드되지 않은 경우 무시
+    });
+    sendResponse({ success: true });
+  } catch (err) {
+    logger.error('Failed to open popup', err);
+    sendResponse({ success: false, error: 'Failed to open popup' });
+  }
+}
+
+async function handleUploadSnapshot(sendResponse: (response: MessageResponse) => void) {
+  const appsScriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL || '';
+
+  if (!appsScriptUrl) {
+    sendResponse({
+      success: false,
+      error: 'Apps Script URL이 설정되지 않았습니다. .env 파일을 확인해주세요.',
+    });
+    return;
+  }
+
+  const snapshotWords = await wordRepository.findAll();
+  const allReviewStates = await reviewStateRepository.findAll();
+
+  const reviewStatesMap: Record<string, unknown> = {};
+  allReviewStates.forEach((state) => {
+    reviewStatesMap[state.wordId] = state;
+  });
+
+  const snapshotData = {
+    words: snapshotWords,
+    reviewStates: reviewStatesMap,
+  };
+
+  try {
+    const uploadResponse = await fetch(appsScriptUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(snapshotData),
+    });
+
+    const result = await uploadResponse.json();
+
+    if (result.success) {
+      sendResponse({ success: true, data: result.data });
+    } else {
+      sendResponse({ success: false, error: result.error || 'Upload failed' });
+    }
+  } catch (uploadError) {
+    logger.error('Snapshot upload error', uploadError);
+    sendResponse({
+      success: false,
+      error: uploadError instanceof Error ? uploadError.message : 'Upload failed',
+    });
+  }
+}
