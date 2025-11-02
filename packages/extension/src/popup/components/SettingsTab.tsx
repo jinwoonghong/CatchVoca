@@ -547,7 +547,7 @@ export function SettingsTab() {
         <div className="p-3 bg-gray-50 rounded-md text-sm text-gray-600 space-y-1">
           <div className="flex justify-between">
             <span>버전</span>
-            <span className="font-medium text-gray-900">0.1.0</span>
+            <span className="font-medium text-gray-900">0.3.0</span>
           </div>
           <div className="flex justify-between">
             <span>복습 알고리즘</span>
