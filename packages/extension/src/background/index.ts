@@ -3,7 +3,7 @@
  * API 호출, 데이터 저장, 컨텍스트 메뉴 관리
  */
 
-import { wordRepository, reviewStateRepository, eventBus, db, calculateNextReview, validateSnapshotDetailed } from '@catchvoca/core';
+import { wordRepository, reviewStateRepository, eventBus, db, calculateNextReview, validateSnapshotDetailed, decodeHtmlEntities } from '@catchvoca/core';
 import type { WordEntryInput, LookupResult, Rating, Settings, Snapshot } from '@catchvoca/types';
 import { DEFAULT_SETTINGS } from '@catchvoca/types';
 
@@ -274,14 +274,7 @@ async function fetchNaverDictionary(word: string): Promise<LookupResult> {
     for (const mean of means) {
       if (mean.value) {
         // HTML 태그 제거 및 엔티티 디코딩
-        let cleanValue = mean.value.replace(/<[^>]*>/g, '').trim();
-        cleanValue = cleanValue
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/&nbsp;/g, ' ');
+        const cleanValue = decodeHtmlEntities(mean.value.replace(/<[^>]*>/g, '')).trim();
         if (cleanValue) {
           definitions.push(cleanValue);
         }
@@ -375,14 +368,7 @@ async function fetchDictionaryAPI(word: string): Promise<LookupResult> {
     for (const def of defs) {
       if (def.definition) {
         // HTML 태그 제거 및 엔티티 디코딩
-        let cleanDef = def.definition.replace(/<[^>]*>/g, '').trim();
-        cleanDef = cleanDef
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/&nbsp;/g, ' ');
+        const cleanDef = decodeHtmlEntities(def.definition.replace(/<[^>]*>/g, '')).trim();
         if (cleanDef) {
           definitions.push(cleanDef);
         }
@@ -499,6 +485,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             dueReviews.map((review) => wordRepository.findById(review.wordId))
           );
           sendResponse({ success: true, data: dueWords.filter((w) => w !== null) });
+          break;
+
+        case 'START_REVIEW_SESSION':
+          const sessionLimit = message.limit || 20;
+          const sessionDueReviews = await reviewStateRepository.findDueReviews(sessionLimit);
+          const sessionWords = await Promise.all(
+            sessionDueReviews.map((review) => wordRepository.findById(review.wordId))
+          );
+          const validSessionWords = sessionWords.filter((w) => w !== null);
+          console.log('[CatchVoca] Review session started:', {
+            totalDue: sessionDueReviews.length,
+            sessionSize: validSessionWords.length,
+            limit: sessionLimit,
+          });
+          sendResponse({ success: true, data: validSessionWords });
           break;
 
         case 'SUBMIT_REVIEW':
@@ -721,8 +722,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
 
         case 'UPLOAD_SNAPSHOT':
-          // Apps Script 웹앱 URL (배포 후 설정 필요)
-          const appsScriptUrl = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+          // Apps Script 웹앱 URL (환경 변수에서 가져오기)
+          const appsScriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL || '';
+
+          if (!appsScriptUrl) {
+            sendResponse({
+              success: false,
+              error: 'Apps Script URL이 설정되지 않았습니다. .env 파일을 확인해주세요.',
+            });
+            break;
+          }
 
           // 스냅샷 데이터 준비
           const snapshotWords = await wordRepository.findAll();

@@ -183,7 +183,6 @@ export class WordRepository extends BaseRepository<
    */
   async softDelete(id: string): Promise<void> {
     await this.update(id, {
-      // @ts-expect-error - deletedAt is not in UpdateDTO but exists in WordEntry
       deletedAt: Date.now(),
     });
   }

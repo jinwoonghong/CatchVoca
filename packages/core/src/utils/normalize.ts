@@ -38,17 +38,23 @@ export function normalizeUrl(url: string): string {
 }
 
 /**
+ * HTML 엔티티를 디코딩합니다
+ */
+export function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
+}
+
+/**
  * HTML 태그를 제거합니다
  */
 export function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, '') // HTML 태그 제거
-    .replace(/&nbsp;/g, ' ') // &nbsp; → 공백
-    .replace(/&amp;/g, '&') // &amp; → &
-    .replace(/&lt;/g, '<') // &lt; → <
-    .replace(/&gt;/g, '>') // &gt; → >
-    .replace(/&quot;/g, '"') // &quot; → "
-    .trim();
+  return decodeHtmlEntities(html.replace(/<[^>]*>/g, '')).trim();
 }
 
 /**

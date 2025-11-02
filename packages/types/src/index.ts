@@ -134,6 +134,14 @@ export interface LookupResult {
   viewCount?: number; // 조회 횟수 (기존 단어인 경우)
   isSaved?: boolean; // 이미 저장된 단어 여부
   wordId?: string; // 저장된 단어의 ID (isSaved가 true인 경우)
+  reviewState?: {
+    // 복습 상태 정보 (재학습 지원)
+    lastReviewedAt?: number; // 마지막 복습일
+    repetitions: number; // 복습 횟수
+    easeFactor: number; // 숙련도
+    nextReviewAt: number; // 다음 복습일
+    isDue: boolean; // 복습 예정 여부
+  };
 }
 
 /**
@@ -319,6 +327,7 @@ export type WordEntryUpdateDTO = Partial<
     | 'note'
     | 'viewCount'
     | 'lastViewedAt'
+    | 'deletedAt'
   >
 >;
 

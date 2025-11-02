@@ -129,13 +129,27 @@ export function SettingsTab() {
         });
 
         if (response.success) {
-          alert('데이터를 가져왔습니다.');
+          const stats = response.data;
+          const message = `✅ 데이터 가져오기 완료!\n\n` +
+            `📥 가져온 항목:\n` +
+            `  • 단어: ${stats.importedWords}개\n` +
+            `  • 복습 상태: ${stats.importedReviews}개\n\n` +
+            `⏭️ 건너뛴 항목:\n` +
+            `  • 단어: ${stats.skippedWords}개 (기존 데이터가 더 최신)\n` +
+            `  • 복습 상태: ${stats.skippedReviews}개\n\n` +
+            `📊 전체: ${stats.totalWords}개 단어, ${stats.totalReviews}개 복습 상태`;
+
+          alert(message);
           loadStorageInfo();
         } else {
-          alert('데이터 가져오기에 실패했습니다.');
+          const errorMsg = response.error || '데이터 가져오기에 실패했습니다.';
+          const details = response.details
+            ? '\n\n오류 상세:\n' + response.details.map((d: any) => `  • ${d.field}: ${d.message}`).join('\n')
+            : '';
+          alert(errorMsg + details);
         }
       } catch (err) {
-        alert('잘못된 파일 형식입니다.');
+        alert('❌ 잘못된 파일 형식입니다.\n\nCatchVoca 백업 파일(.json)을 선택해주세요.');
         console.error('[SettingsTab] Import error:', err);
       }
     };

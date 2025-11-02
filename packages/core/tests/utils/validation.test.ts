@@ -64,8 +64,8 @@ describe('isValidUrl', () => {
     expect(isValidUrl('example.com')).toBe(false); // 프로토콜 누락
   });
 
-  it('빈 문자열을 거부해야 함', () => {
-    expect(isValidUrl('')).toBe(false);
+  it('빈 문자열을 허용해야 함 (수동 입력의 경우)', () => {
+    expect(isValidUrl('')).toBe(true);
   });
 });
 

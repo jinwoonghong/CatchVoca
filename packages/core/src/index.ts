@@ -18,6 +18,7 @@ export {
   normalizeWord,
   normalizeContext,
   normalizeUrl,
+  decodeHtmlEntities,
   sanitizeHtml,
   generateWordId,
 } from './utils/normalize';
