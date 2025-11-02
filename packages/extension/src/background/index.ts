@@ -3,8 +3,9 @@
  * API 호출, 데이터 저장, 컨텍스트 메뉴 관리
  */
 
-import { wordRepository, reviewStateRepository, eventBus, db, calculateNextReview } from '@catchvoca/core';
-import type { WordEntryInput, LookupResult, Rating } from '@catchvoca/types';
+import { wordRepository, reviewStateRepository, eventBus, db, calculateNextReview, validateSnapshotDetailed } from '@catchvoca/core';
+import type { WordEntryInput, LookupResult, Rating, Settings, Snapshot } from '@catchvoca/types';
+import { DEFAULT_SETTINGS } from '@catchvoca/types';
 
 // DB 초기화 (Extension 환경에서 명시적으로 open)
 let dbInitialized = false;
@@ -134,6 +135,61 @@ async function saveWord(wordData: Partial<WordEntryInput>): Promise<void> {
       title: 'CatchVoca',
       message: `저장 실패: ${error instanceof Error ? error.message : 'Unknown error'}`,
     });
+    throw error;
+  }
+}
+
+/**
+ * Settings 저장소 키
+ */
+const SETTINGS_STORAGE_KEY = 'catchvoca_settings';
+
+/**
+ * Settings 가져오기
+ */
+async function getSettings(): Promise<Settings> {
+  try {
+    const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+    const storedSettings = result[SETTINGS_STORAGE_KEY];
+
+    // 저장된 설정이 있으면 기본값과 병합
+    if (storedSettings) {
+      return {
+        ...DEFAULT_SETTINGS,
+        ...storedSettings,
+      };
+    }
+
+    // 없으면 기본값 반환
+    return DEFAULT_SETTINGS;
+  } catch (error) {
+    console.error('[CatchVoca] Failed to get settings:', error);
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/**
+ * Settings 저장
+ */
+async function updateSettings(settings: Partial<Settings>): Promise<void> {
+  try {
+    // 현재 설정 가져오기
+    const currentSettings = await getSettings();
+
+    // 업데이트된 설정 병합
+    const updatedSettings: Settings = {
+      ...currentSettings,
+      ...settings,
+    };
+
+    // 저장
+    await chrome.storage.local.set({
+      [SETTINGS_STORAGE_KEY]: updatedSettings,
+    });
+
+    console.log('[CatchVoca] Settings updated:', updatedSettings);
+  } catch (error) {
+    console.error('[CatchVoca] Failed to update settings:', error);
     throw error;
   }
 }
@@ -484,20 +540,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
 
         case 'GET_SETTINGS':
-          // TODO: Implement settings storage
+          const settings = await getSettings();
           sendResponse({
             success: true,
-            data: {
-              dailyReviewGoal: 20,
-              autoSync: false,
-              notifications: true,
-              theme: 'auto',
-            },
+            data: settings,
           });
           break;
 
         case 'UPDATE_SETTINGS':
-          // TODO: Implement settings storage
+          await updateSettings(message.settings);
           sendResponse({ success: true });
           break;
 
@@ -526,8 +577,120 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           break;
 
         case 'IMPORT_DATA':
-          // TODO: Implement data import with validation
-          sendResponse({ success: true });
+          try {
+            await ensureDbInitialized();
+
+            // JSON 파싱 검증
+            let snapshot: Snapshot;
+            try {
+              if (typeof message.data === 'string') {
+                snapshot = JSON.parse(message.data);
+              } else {
+                snapshot = message.data;
+              }
+            } catch (parseError) {
+              console.error('[CatchVoca] JSON parse error:', parseError);
+              sendResponse({
+                success: false,
+                error: 'Invalid JSON format',
+              });
+              break;
+            }
+
+            // Snapshot 구조 검증
+            const validationErrors = validateSnapshotDetailed(snapshot);
+            if (validationErrors.length > 0) {
+              console.error('[CatchVoca] Validation errors:', validationErrors);
+              sendResponse({
+                success: false,
+                error: 'Invalid data format',
+                details: validationErrors,
+              });
+              break;
+            }
+
+            // 데이터 가져오기 전략: 기존 데이터는 유지하고 새 데이터 추가 (중복 ID는 업데이트)
+            let importedWords = 0;
+            let importedReviews = 0;
+            let skippedWords = 0;
+            let skippedReviews = 0;
+
+            // WordEntry 가져오기
+            for (const wordEntry of snapshot.wordEntries) {
+              try {
+                // 기존 데이터 확인
+                const existing = await wordRepository.findById(wordEntry.id);
+
+                if (existing) {
+                  // 기존 데이터가 있으면 업데이트 (최신 데이터 우선)
+                  if (wordEntry.updatedAt > existing.updatedAt) {
+                    // 전체 데이터 교체 (updatedAt은 가져오기 시점으로 업데이트)
+                    await db.wordEntries.put({
+                      ...wordEntry,
+                      updatedAt: Date.now(),
+                    });
+                    importedWords++;
+                  } else {
+                    skippedWords++;
+                  }
+                } else {
+                  // 새 데이터 추가
+                  await db.wordEntries.add(wordEntry);
+                  importedWords++;
+                }
+              } catch (error) {
+                console.error('[CatchVoca] Failed to import word:', wordEntry.id, error);
+                skippedWords++;
+              }
+            }
+
+            // ReviewState 가져오기
+            for (const reviewState of snapshot.reviewStates) {
+              try {
+                // 기존 데이터 확인
+                const existing = await reviewStateRepository.findById(reviewState.id);
+
+                if (existing) {
+                  // 기존 데이터가 있으면 업데이트 (최신 히스토리 우선)
+                  if (reviewState.history.length > existing.history.length) {
+                    await db.reviewStates.put(reviewState);
+                    importedReviews++;
+                  } else {
+                    skippedReviews++;
+                  }
+                } else {
+                  // 새 데이터 추가
+                  await db.reviewStates.add(reviewState);
+                  importedReviews++;
+                }
+              } catch (error) {
+                console.error('[CatchVoca] Failed to import review state:', reviewState.id, error);
+                skippedReviews++;
+              }
+            }
+
+            // 성공 응답
+            sendResponse({
+              success: true,
+              data: {
+                importedWords,
+                importedReviews,
+                skippedWords,
+                skippedReviews,
+                totalWords: snapshot.wordEntries.length,
+                totalReviews: snapshot.reviewStates.length,
+              },
+            });
+
+            // 이벤트 발행
+            eventBus.emit('sync:completed', { importedWords, importedReviews });
+          } catch (error) {
+            console.error('[CatchVoca] Import data error:', error);
+            sendResponse({
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error occurred',
+            });
+          }
           break;
 
         case 'CLEAR_ALL_DATA':

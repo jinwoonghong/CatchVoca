@@ -6,21 +6,11 @@
  */
 
 import { useState, useEffect } from 'react';
-
-interface Settings {
-  dailyReviewGoal: number;
-  autoSync: boolean;
-  notifications: boolean;
-  theme: 'light' | 'dark' | 'auto';
-}
+import type { Settings } from '@catchvoca/types';
+import { DEFAULT_SETTINGS } from '@catchvoca/types';
 
 export function SettingsTab() {
-  const [settings, setSettings] = useState<Settings>({
-    dailyReviewGoal: 20,
-    autoSync: false,
-    notifications: true,
-    theme: 'auto',
-  });
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [storageInfo, setStorageInfo] = useState<{
@@ -246,6 +236,50 @@ export function SettingsTab() {
         </div>
       )}
 
+      {/* 일반 설정 */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900">일반 설정</h3>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            기본 언어
+          </label>
+          <select
+            value={settings.defaultLanguage}
+            onChange={(e) =>
+              setSettings({ ...settings, defaultLanguage: e.target.value })
+            }
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="zh">中文</option>
+            <option value="ko">한국어</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium text-gray-700">발음 자동 재생</label>
+            <p className="text-xs text-gray-500">단어 조회 시 발음 자동 재생</p>
+          </div>
+          <button
+            onClick={() =>
+              setSettings({ ...settings, autoPlayAudio: !settings.autoPlayAudio })
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.autoPlayAudio ? 'bg-primary-600' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.autoPlayAudio ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
       {/* 학습 설정 */}
       <div className="space-y-3">
         <h3 className="text-lg font-semibold text-gray-900">학습 설정</h3>
@@ -258,9 +292,9 @@ export function SettingsTab() {
             type="number"
             min="1"
             max="100"
-            value={settings.dailyReviewGoal}
+            value={settings.dailyReviewLimit}
             onChange={(e) =>
-              setSettings({ ...settings, dailyReviewGoal: parseInt(e.target.value) })
+              setSettings({ ...settings, dailyReviewLimit: parseInt(e.target.value) || 20 })
             }
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
@@ -271,40 +305,86 @@ export function SettingsTab() {
 
         <div className="flex items-center justify-between">
           <div>
-            <label className="text-sm font-medium text-gray-700">알림</label>
-            <p className="text-xs text-gray-500">복습 알림 받기</p>
+            <label className="text-sm font-medium text-gray-700">복습 알림</label>
+            <p className="text-xs text-gray-500">복습 시간 알림 받기</p>
           </div>
           <button
             onClick={() =>
-              setSettings({ ...settings, notifications: !settings.notifications })
+              setSettings({ ...settings, reviewNotifications: !settings.reviewNotifications })
             }
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              settings.notifications ? 'bg-primary-600' : 'bg-gray-300'
+              settings.reviewNotifications ? 'bg-primary-600' : 'bg-gray-300'
             }`}
           >
             <span
               className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                settings.notifications ? 'translate-x-6' : 'translate-x-1'
+                settings.reviewNotifications ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium text-gray-700">자동 복습 추가</label>
+            <p className="text-xs text-gray-500">저장 시 자동으로 복습 큐에 추가</p>
+          </div>
+          <button
+            onClick={() =>
+              setSettings({ ...settings, autoAddToReview: !settings.autoAddToReview })
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.autoAddToReview ? 'bg-primary-600' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.autoAddToReview ? 'translate-x-6' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
       </div>
 
-      {/* 동기화 설정 */}
+      {/* UI 설정 */}
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">동기화 설정</h3>
+        <h3 className="text-lg font-semibold text-gray-900">UI 설정</h3>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            테마
+          </label>
+          <select
+            value={settings.theme}
+            onChange={(e) =>
+              setSettings({ ...settings, theme: e.target.value as 'light' | 'dark' | 'auto' })
+            }
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="light">라이트</option>
+            <option value="dark">다크</option>
+            <option value="auto">시스템 설정 따르기</option>
+          </select>
+        </div>
 
         <div className="flex items-center justify-between">
           <div>
-            <label className="text-sm font-medium text-gray-700">자동 동기화</label>
-            <p className="text-xs text-gray-500">브라우저 간 자동 동기화 (향후 지원 예정)</p>
+            <label className="text-sm font-medium text-gray-700">컴팩트 모드</label>
+            <p className="text-xs text-gray-500">간결한 UI 사용</p>
           </div>
           <button
-            disabled
-            className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 cursor-not-allowed"
+            onClick={() =>
+              setSettings({ ...settings, compactMode: !settings.compactMode })
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.compactMode ? 'bg-primary-600' : 'bg-gray-300'
+            }`}
           >
-            <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1" />
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.compactMode ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
           </button>
         </div>
       </div>

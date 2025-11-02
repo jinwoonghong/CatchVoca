@@ -253,6 +253,41 @@ export interface ProStatus {
   stripeSubscriptionId?: string;
 }
 
+/**
+ * 사용자 설정
+ */
+export interface Settings {
+  // 일반 설정
+  defaultLanguage: string; // 기본 언어 (en, ja, zh, ko 등)
+  autoPlayAudio: boolean; // 발음 자동 재생 여부
+
+  // 복습 설정
+  dailyReviewLimit: number; // 일일 복습 목표 (기본: 20)
+  reviewNotifications: boolean; // 복습 알림 활성화
+
+  // 저장 설정
+  autoAddToReview: boolean; // 저장 시 자동으로 복습 큐에 추가
+  defaultTags: string[]; // 기본 태그 목록
+
+  // UI 설정
+  theme: 'light' | 'dark' | 'auto'; // 테마 설정
+  compactMode: boolean; // 컴팩트 모드
+}
+
+/**
+ * 기본 설정 값
+ */
+export const DEFAULT_SETTINGS: Settings = {
+  defaultLanguage: 'en',
+  autoPlayAudio: false,
+  dailyReviewLimit: 20,
+  reviewNotifications: true,
+  autoAddToReview: true,
+  defaultTags: [],
+  theme: 'light',
+  compactMode: false,
+};
+
 // ============================================================================
 // Repository DTOs
 // ============================================================================

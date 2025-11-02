@@ -28,10 +28,16 @@ export {
   isValidUrl,
   isValidTags,
   isValidLanguageCode,
+  isValidTimestamp,
+  isValidWordEntry,
+  isValidReviewState,
+  isValidSnapshot,
+  validateSnapshotDetailed,
   WORD_CONSTRAINTS,
   CONTEXT_CONSTRAINTS,
   TAG_CONSTRAINTS,
 } from './utils/validation';
+export type { ValidationError } from './utils/validation';
 
 // Services - SM-2 Algorithm
 export {
