@@ -12,10 +12,13 @@ import {
   validateSnapshotDetailed,
   Logger,
 } from '@catchvoca/core';
-import type { Rating, Snapshot } from '@catchvoca/types';
+import type { Rating, Snapshot, GeminiAnalysisRequest } from '@catchvoca/types';
 import { lookupWord } from './dictionaryAPI';
 import { saveWord, getWordInfo, incrementWordViewCount } from './wordService';
 import { getSettings, updateSettings } from './storage';
+import { analyzePageWithGemini } from './geminiAPI';
+import { calculateBatchImportance, getRecommendedWords } from './wordImportance';
+import { canUseAI, incrementAIUsage, getAIUsageStats } from './aiUsageManager';
 
 const logger = new Logger('MessageHandler');
 
@@ -105,6 +108,23 @@ export async function handleMessage(
 
       case 'UPLOAD_SNAPSHOT':
         await handleUploadSnapshot(sendResponse);
+        break;
+
+      // AI 관련 핸들러 (Phase 2-B)
+      case 'ANALYZE_PAGE_AI':
+        await handleAnalyzePageAI(message, sendResponse);
+        break;
+
+      case 'GET_AI_USAGE_STATS':
+        await handleGetAIUsageStats(sendResponse);
+        break;
+
+      case 'GET_RECOMMENDED_WORDS':
+        await handleGetRecommendedWords(message, sendResponse);
+        break;
+
+      case 'CALCULATE_WORD_IMPORTANCE':
+        await handleCalculateWordImportance(message, sendResponse);
         break;
 
       default:
@@ -422,6 +442,141 @@ async function handleUploadSnapshot(sendResponse: (response: MessageResponse) =>
     sendResponse({
       success: false,
       error: uploadError instanceof Error ? uploadError.message : 'Upload failed',
+    });
+  }
+}
+
+// ============================================================================
+// AI 관련 핸들러 (Phase 2-B)
+// ============================================================================
+
+/**
+ * AI 페이지 분석 핸들러
+ */
+async function handleAnalyzePageAI(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    // 사용량 확인
+    const usageCheck = await canUseAI();
+
+    if (!usageCheck.allowed) {
+      sendResponse({
+        success: false,
+        error: usageCheck.isPro
+          ? 'AI analysis temporarily unavailable'
+          : `Daily limit reached (${usageCheck.remaining} remaining)`,
+        data: {
+          isPro: usageCheck.isPro,
+          remaining: usageCheck.remaining,
+        },
+      });
+      return;
+    }
+
+    // Gemini API 호출
+    const request: GeminiAnalysisRequest = message.data;
+    const result = await analyzePageWithGemini(request);
+
+    // 사용량 증가
+    await incrementAIUsage();
+
+    logger.info('AI analysis completed', {
+      url: request.pageUrl,
+      recommendedWords: result.recommendedWords.length,
+    });
+
+    sendResponse({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error('AI analysis failed', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'AI analysis failed',
+    });
+  }
+}
+
+/**
+ * AI 사용량 통계 조회 핸들러
+ */
+async function handleGetAIUsageStats(
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const stats = await getAIUsageStats();
+
+    sendResponse({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    logger.error('Failed to get AI usage stats', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get stats',
+    });
+  }
+}
+
+/**
+ * 추천 단어 조회 핸들러
+ */
+async function handleGetRecommendedWords(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { words, limit, minScore, isPro } = message.data;
+
+    const recommended = getRecommendedWords(
+      words,
+      limit || 15,
+      minScore || 30,
+      isPro || false
+    );
+
+    sendResponse({
+      success: true,
+      data: recommended,
+    });
+  } catch (error) {
+    logger.error('Failed to get recommended words', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get recommendations',
+    });
+  }
+}
+
+/**
+ * 단어 중요도 계산 핸들러
+ */
+async function handleCalculateWordImportance(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { words, contextScores, isPro } = message.data;
+
+    const importance = calculateBatchImportance(
+      words,
+      contextScores || new Map(),
+      isPro || false
+    );
+
+    sendResponse({
+      success: true,
+      data: importance,
+    });
+  } catch (error) {
+    logger.error('Failed to calculate word importance', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Calculation failed',
     });
   }
 }

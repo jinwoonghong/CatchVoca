@@ -188,7 +188,7 @@ function validateDifficulty(
 /**
  * Gemini API 키 설정 (환경 변수에서 로드)
  */
-export function setGeminiAPIKey(apiKey: string): void {
+export function setGeminiAPIKey(_apiKey: string): void {
   // 실제 구현에서는 chrome.storage 또는 환경 변수에서 로드
   logger.info('Gemini API key configured');
 }
@@ -197,5 +197,6 @@ export function setGeminiAPIKey(apiKey: string): void {
  * Gemini API 사용 가능 여부 확인
  */
 export function isGeminiAvailable(): boolean {
-  return GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY' && GEMINI_API_KEY.length > 0;
+  const keyLength = typeof GEMINI_API_KEY === 'string' ? GEMINI_API_KEY.length : 0;
+  return GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY' && keyLength > 0;
 }

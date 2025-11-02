@@ -23,7 +23,8 @@ const STORAGE_KEYS = {
  */
 function getTodayDate(): string {
   const now = new Date();
-  return now.toISOString().split('T')[0];
+  const parts = now.toISOString().split('T');
+  return parts[0] || '';
 }
 
 /**
@@ -81,7 +82,6 @@ export async function canUseAI(): Promise<{
  */
 export async function incrementAIUsage(): Promise<void> {
   try {
-    const today = getTodayDate();
     const usage = await getTodayUsage();
 
     // 오늘 사용량 증가
@@ -106,9 +106,8 @@ export async function incrementAIUsage(): Promise<void> {
  */
 async function getTodayUsage(): Promise<AIUsage> {
   try {
-    const today = getTodayDate();
-
     const result = await chrome.storage.local.get(STORAGE_KEYS.AI_USAGE);
+    const today = getTodayDate();
     const stored = result[STORAGE_KEYS.AI_USAGE] as AIUsage | undefined;
 
     // 저장된 데이터가 오늘 것이면 반환

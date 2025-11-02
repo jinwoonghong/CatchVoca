@@ -4,6 +4,7 @@
  */
 
 import type { WordEntryInput, LookupResult } from '@catchvoca/types';
+import { initializeAIHighlighter } from './aiHighlighter';
 
 // 툴팁 요소
 let tooltip: HTMLDivElement | null = null;
@@ -474,5 +475,8 @@ function removeTooltip(): void {
     tooltip = null;
   }
 }
+
+// AI Highlighter 초기화
+initializeAIHighlighter();
 
 console.log('[CatchVoca] Content script loaded');
