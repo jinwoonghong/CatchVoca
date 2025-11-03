@@ -19,6 +19,8 @@ import { getSettings, updateSettings } from './storage';
 import { analyzePageWithGemini } from './geminiAPI';
 import { calculateBatchImportance, getRecommendedWords } from './wordImportance';
 import { canUseAI, incrementAIUsage, getAIUsageStats } from './aiUsageManager';
+import { generateMobileQuizLink, isUrlSafe } from './mobileQuizService';
+import { exportAllData, importAllData } from './backupService';
 
 const logger = new Logger('MessageHandler');
 
@@ -138,6 +140,25 @@ export async function handleMessage(
 
       case 'QUICK_SAVE':
         await handleQuickSave(message, sendResponse);
+        break;
+
+      // 모바일 퀴즈 관련 핸들러 (Week 5-6)
+      case 'GENERATE_MOBILE_QUIZ_LINK':
+        await handleGenerateMobileQuizLink(message, sendResponse);
+        break;
+
+      // 백업/복원 관련 핸들러 (Phase 2-D)
+      case 'EXPORT_ALL_DATA':
+        await handleExportAllData(sendResponse);
+        break;
+
+      case 'IMPORT_ALL_DATA':
+        await handleImportAllData(message, sendResponse);
+        break;
+
+      // 모바일 퀴즈 관련 핸들러
+      case 'GENERATE_MOBILE_QUIZ_LINK':
+        await handleGenerateMobileQuizLink(message, sendResponse);
         break;
 
       default:
@@ -709,6 +730,133 @@ async function handleQuickSave(
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Quick save failed',
+    });
+  }
+}
+
+/**
+ * 모바일 퀴즈 링크 생성 핸들러
+ */
+async function handleGenerateMobileQuizLink(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { maxWords, prioritizeDue, includeRecent } = message.data || {};
+
+    // 모든 단어 조회
+    const allWords = await wordRepository.findAll();
+
+    // 삭제된 단어 제외
+    const activeWords = allWords.filter((word) => !word.deletedAt);
+
+    if (activeWords.length === 0) {
+      sendResponse({
+        success: false,
+        error: '저장된 단어가 없습니다.',
+      });
+      return;
+    }
+
+    // ReviewState 맵 생성
+    const reviewStates = new Map();
+    for (const word of activeWords) {
+      const reviewState = await reviewStateRepository.findByWordId(word.id);
+      if (reviewState) {
+        reviewStates.set(word.id, reviewState);
+      }
+    }
+
+    // 퀴즈 링크 생성
+    const result = await generateMobileQuizLink(activeWords, reviewStates, {
+      maxWords: maxWords || 20,
+      prioritizeDue: prioritizeDue !== false,
+      includeRecent: includeRecent !== false,
+    });
+
+    // URL 길이 검증
+    const urlSafety = isUrlSafe(result.url);
+
+    if (!urlSafety.safe) {
+      sendResponse({
+        success: false,
+        error: `URL이 너무 깁니다 (${urlSafety.length}자). 단어 수를 줄여주세요.`,
+        details: {
+          urlLength: urlSafety.length,
+          maxLength: urlSafety.maxLength,
+          suggestedMaxWords: Math.floor(
+            (result.wordCount * urlSafety.maxLength) / urlSafety.length
+          ),
+        },
+      });
+      return;
+    }
+
+    sendResponse({
+      success: true,
+      data: {
+        url: result.url,
+        wordCount: result.wordCount,
+        compressedSize: result.compressedSize,
+        estimatedUrlLength: result.estimatedUrlLength,
+        urlSafe: urlSafety.safe,
+      },
+    });
+  } catch (error) {
+    logger.error('Generate mobile quiz link handler error', error);
+    sendResponse({
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : 'Failed to generate mobile quiz link',
+    });
+  }
+}
+
+/**
+ * 데이터 내보내기 핸들러
+ */
+async function handleExportAllData(
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const backupData = await exportAllData();
+
+    sendResponse({
+      success: true,
+      data: backupData,
+    });
+  } catch (error) {
+    logger.error('Export all data handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to export data',
+    });
+  }
+}
+
+/**
+ * 데이터 가져오기 핸들러
+ */
+async function handleImportAllData(
+  message: any,
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { backupData, options } = message.data;
+
+    const result = await importAllData(backupData, options);
+
+    sendResponse({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    logger.error('Import all data handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to import data',
     });
   }
 }

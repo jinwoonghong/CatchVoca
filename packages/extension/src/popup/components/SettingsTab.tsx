@@ -21,6 +21,8 @@ export function SettingsTab() {
   const [isUploading, setIsUploading] = useState(false);
   const [mobileUrl, setMobileUrl] = useState<string | null>(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   /**
    * 설정 로드
@@ -184,40 +186,38 @@ export function SettingsTab() {
   };
 
   /**
-   * 모바일 퀴즈 URL 생성 (URL Hash 기반)
+   * 모바일 퀴즈 URL 생성 (URL Hash 기반 - LZ-String 압축)
    */
   const handleGenerateMobileQuiz = async () => {
     setIsUploading(true);
     setMobileUrl(null);
+    setQrCodeDataUrl(null);
 
     try {
-      // 1. 복습 대상 단어 가져오기
+      // 1. Background에서 모바일 퀴즈 링크 생성 요청
       const response = await chrome.runtime.sendMessage({
-        type: 'GET_DUE_REVIEWS',
-        limit: 20,
+        type: 'GENERATE_MOBILE_QUIZ_LINK',
+        options: {
+          maxWords: 20,
+          prioritizeDue: true,
+          includeRecent: true,
+        },
       });
 
-      if (response.success && response.data.length > 0) {
-        // 2. 단어 데이터를 Base64로 인코딩
-        const quizData = response.data.map((word: any) => ({
-          id: word.id,
-          word: word.word,
-          definitions: word.definitions,
-          phonetic: word.phonetic,
-        }));
+      if (response.success && response.data) {
+        const { url, wordCount, compressedSize, estimatedUrlLength } = response.data;
 
-        const jsonStr = JSON.stringify(quizData);
-        const base64Data = btoa(unescape(encodeURIComponent(jsonStr)));
+        // URL 안전성 확인 (2048자 제한)
+        if (estimatedUrlLength > 2048) {
+          alert(`⚠️ URL이 너무 깁니다 (${estimatedUrlLength}자)\n\n단어 수를 줄이거나 짧은 정의를 사용해주세요.`);
+          return;
+        }
 
-        // 3. URL Hash 생성
-        const extensionId = chrome.runtime.id;
-        const quizUrl = `chrome-extension://${extensionId}/quiz.html#${base64Data}`;
+        setMobileUrl(url);
 
-        setMobileUrl(quizUrl);
-
-        // 4. QR 코드 생성
+        // 2. QR 코드 생성
         try {
-          const qrDataUrl = await QRCode.toDataURL(quizUrl, {
+          const qrDataUrl = await QRCode.toDataURL(url, {
             width: 256,
             margin: 2,
             color: {
@@ -229,8 +229,16 @@ export function SettingsTab() {
         } catch (qrErr) {
           console.error('[SettingsTab] QR code generation error:', qrErr);
         }
+
+        // 3. 성공 메시지
+        alert(
+          `✅ 모바일 퀴즈 링크 생성 완료!\n\n` +
+          `📝 단어 수: ${wordCount}개\n` +
+          `📦 압축 크기: ${compressedSize}자\n` +
+          `🔗 전체 URL 길이: ${estimatedUrlLength}자`
+        );
       } else {
-        alert('복습할 단어가 없습니다. 먼저 단어를 저장해주세요!');
+        alert('❌ 복습할 단어가 없습니다.\n\n먼저 단어를 저장해주세요!');
       }
     } catch (err) {
       alert('모바일 퀴즈 생성 중 오류가 발생했습니다.');
@@ -248,6 +256,107 @@ export function SettingsTab() {
       navigator.clipboard.writeText(mobileUrl);
       alert('URL이 클립보드에 복사되었습니다!');
     }
+  };
+
+  /**
+   * 데이터 내보내기
+   */
+  const handleExportData = async () => {
+    setIsExporting(true);
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'EXPORT_ALL_DATA',
+      });
+
+      if (response.success) {
+        const backupData = response.data;
+        const jsonString = JSON.stringify(backupData, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `catchvoca-backup-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert(`백업 완료!\n단어: ${backupData.metadata.totalWords}개`);
+      } else {
+        alert(`내보내기 실패: ${response.error}`);
+      }
+    } catch (err) {
+      alert('데이터 내보내기 중 오류가 발생했습니다.');
+      console.error('[SettingsTab] Export error:', err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  /**
+   * 데이터 가져오기
+   */
+  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const content = e.target?.result as string;
+          const backupData = JSON.parse(content);
+
+          const confirmed = confirm(
+            `백업 파일을 가져오시겠습니까?\n\n단어: ${backupData.metadata?.totalWords || 0}개\n복습 상태: ${backupData.metadata?.totalReviewStates || 0}개\n\n기존 데이터와 중복되는 단어는 건너뜁니다.`
+          );
+
+          if (!confirmed) {
+            setIsImporting(false);
+            return;
+          }
+
+          const response = await chrome.runtime.sendMessage({
+            type: 'IMPORT_ALL_DATA',
+            data: {
+              backupData,
+              options: {
+                clearExisting: false,
+                skipDuplicates: true,
+              },
+            },
+          });
+
+          if (response.success) {
+            const result = response.data;
+            alert(
+              `가져오기 완료!\n\n가져온 단어: ${result.importedWords}개\n가져온 복습 상태: ${result.importedReviewStates}개\n건너뛴 단어: ${result.skippedWords}개`
+            );
+            loadStorageInfo(); // 스토리지 정보 갱신
+          } else {
+            alert(`가져오기 실패: ${response.error}`);
+          }
+        } catch (parseErr) {
+          alert('백업 파일 형식이 올바르지 않습니다.');
+          console.error('[SettingsTab] Import parse error:', parseErr);
+        } finally {
+          setIsImporting(false);
+        }
+      };
+
+      reader.readAsText(file);
+    } catch (err) {
+      alert('데이터 가져오기 중 오류가 발생했습니다.');
+      console.error('[SettingsTab] Import error:', err);
+      setIsImporting(false);
+    }
+
+    // Reset file input
+    event.target.value = '';
   };
 
   return (
@@ -538,6 +647,349 @@ export function SettingsTab() {
         >
           🗑️ 모든 데이터 삭제
         </button>
+      </div>
+
+      {/* AI 설정 (Phase 2-B) */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900">AI 기능</h3>
+
+        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+          <div>
+            <div className="font-medium text-gray-900">AI 분석 활성화</div>
+            <div className="text-sm text-gray-500">웹페이지 단어 분석 및 추천</div>
+          </div>
+          <button
+            onClick={() => {
+              setSettings((prev) => ({
+                ...prev,
+                aiAnalysisEnabled: !prev.aiAnalysisEnabled,
+              }));
+            }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.aiAnalysisEnabled ? 'bg-primary-600' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.aiAnalysisEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+          <div>
+            <div className="font-medium text-gray-900">단어 하이라이트</div>
+            <div className="text-sm text-gray-500">학습 완료/추천 단어 표시</div>
+          </div>
+          <button
+            onClick={() => {
+              setSettings((prev) => ({
+                ...prev,
+                highlightSettings: {
+                  ...prev.highlightSettings,
+                  enabled: !prev.highlightSettings.enabled,
+                },
+              }));
+            }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.highlightSettings.enabled ? 'bg-primary-600' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.highlightSettings.enabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        {settings.highlightSettings.enabled && (
+          <div className="ml-4 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">학습 완료 색상</span>
+              <input
+                type="color"
+                value={settings.highlightSettings.learnedColor}
+                onChange={(e) => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    highlightSettings: {
+                      ...prev.highlightSettings,
+                      learnedColor: e.target.value,
+                    },
+                  }));
+                }}
+                className="w-12 h-8 rounded border border-gray-300 cursor-pointer"
+              />
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">추천 단어 색상</span>
+              <input
+                type="color"
+                value={settings.highlightSettings.recommendedColor}
+                onChange={(e) => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    highlightSettings: {
+                      ...prev.highlightSettings,
+                      recommendedColor: e.target.value,
+                    },
+                  }));
+                }}
+                className="w-12 h-8 rounded border border-gray-300 cursor-pointer"
+              />
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">툴팁 표시</span>
+              <button
+                onClick={() => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    highlightSettings: {
+                      ...prev.highlightSettings,
+                      showTooltip: !prev.highlightSettings.showTooltip,
+                    },
+                  }));
+                }}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  settings.highlightSettings.showTooltip ? 'bg-primary-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                    settings.highlightSettings.showTooltip ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* PDF 및 키보드 설정 (Phase 2-C) */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900">편의 기능</h3>
+
+        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+          <div>
+            <div className="font-medium text-gray-900">PDF 지원</div>
+            <div className="text-sm text-gray-500">PDF 문서에서 단어 선택</div>
+          </div>
+          <button
+            onClick={() => {
+              setSettings((prev) => ({
+                ...prev,
+                pdfSupportEnabled: !prev.pdfSupportEnabled,
+              }));
+            }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.pdfSupportEnabled ? 'bg-primary-600' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.pdfSupportEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="p-3 bg-gray-50 rounded-md space-y-3">
+          <div className="font-medium text-gray-900">키보드 단축키</div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">빠른 조회 (Ctrl+클릭)</span>
+              <button
+                onClick={() => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    keyboardSettings: {
+                      ...prev.keyboardSettings,
+                      quickLookup: {
+                        ...prev.keyboardSettings.quickLookup,
+                        enabled: !prev.keyboardSettings.quickLookup.enabled,
+                      },
+                    },
+                  }));
+                }}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  settings.keyboardSettings.quickLookup.enabled ? 'bg-primary-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                    settings.keyboardSettings.quickLookup.enabled ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">빠른 저장 (Alt+클릭)</span>
+              <button
+                onClick={() => {
+                  setSettings((prev) => ({
+                    ...prev,
+                    keyboardSettings: {
+                      ...prev.keyboardSettings,
+                      quickSave: {
+                        ...prev.keyboardSettings.quickSave,
+                        enabled: !prev.keyboardSettings.quickSave.enabled,
+                      },
+                    },
+                  }));
+                }}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  settings.keyboardSettings.quickSave.enabled ? 'bg-primary-600' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                    settings.keyboardSettings.quickSave.enabled ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 전역 단축키 설정 (Phase 2-D) */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900">⌨️ 전역 단축키</h3>
+
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <div className="text-sm text-blue-800 mb-3">
+            <strong>전역 단축키</strong>는 어떤 웹페이지에서든 작동합니다.
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
+              <div>
+                <div className="font-medium text-gray-900">단어 저장</div>
+                <div className="text-sm text-gray-500">선택한 단어를 빠르게 저장</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Ctrl+Shift+S
+                </kbd>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
+              <div>
+                <div className="font-medium text-gray-900">퀴즈 시작</div>
+                <div className="text-sm text-gray-500">퀴즈 모드 열기</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Ctrl+Shift+Q
+                </kbd>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
+              <div>
+                <div className="font-medium text-gray-900">팝업 열기</div>
+                <div className="text-sm text-gray-500">CatchVoca 팝업 열기</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Ctrl+Shift+V
+                </kbd>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+            }}
+            className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+          >
+            🔧 단축키 커스터마이징
+          </button>
+
+          <p className="mt-3 text-xs text-gray-500 text-center">
+            단축키는 Chrome 설정에서 변경할 수 있습니다
+          </p>
+        </div>
+      </div>
+
+      {/* 데이터 백업/복원 (Phase 2-D) */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900">💾 데이터 백업/복원</h3>
+
+        <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+          <p className="text-sm text-green-800 mb-4">
+            모든 단어와 복습 상태를 JSON 파일로 백업하고 복원할 수 있습니다.
+          </p>
+
+          <div className="space-y-3">
+            {/* 내보내기 */}
+            <button
+              onClick={handleExportData}
+              disabled={isExporting}
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-md transition-colors font-medium ${
+                isExporting
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'hover:bg-green-700'
+              }`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                />
+              </svg>
+              {isExporting ? '내보내는 중...' : '📥 데이터 내보내기'}
+            </button>
+
+            {/* 가져오기 */}
+            <label
+              className={`w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-md transition-colors font-medium cursor-pointer ${
+                isImporting
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'hover:bg-blue-700'
+              }`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                />
+              </svg>
+              {isImporting ? '가져오는 중...' : '📤 데이터 가져오기'}
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleImportData}
+                disabled={isImporting}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          <p className="mt-3 text-xs text-gray-600">
+            💡 백업 파일은 JSON 형식으로 저장되며, 다른 기기로 이동하거나 복원할 수 있습니다.
+          </p>
+        </div>
       </div>
 
       {/* 정보 */}
