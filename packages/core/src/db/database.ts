@@ -3,7 +3,7 @@
  */
 
 import Dexie, { type Table } from 'dexie';
-import type { WordEntry, ReviewState } from '@catchvoca/types';
+import type { WordEntry, ReviewState, AIAnalysisHistory } from '@catchvoca/types';
 
 /**
  * CheckVocaDB - 메인 데이터베이스 클래스
@@ -12,12 +12,13 @@ export class CheckVocaDB extends Dexie {
   // 테이블 선언
   wordEntries!: Table<WordEntry, string>;
   reviewStates!: Table<ReviewState, string>;
+  analysisHistory!: Table<AIAnalysisHistory, string>;
 
   constructor() {
     super('CheckVocaDB');
 
     // 데이터베이스 버전 및 스키마 정의
-    this.version(2).stores({
+    this.version(3).stores({
       // word_entries 테이블
       // &id: Primary Key (unique)
       // normalizedWord: 검색용 인덱스
@@ -42,6 +43,16 @@ export class CheckVocaDB extends Dexie {
         &id,
         wordId,
         nextReviewAt
+      `,
+
+      // analysis_history 테이블 (v3에서 추가)
+      // &id: Primary Key (unique)
+      // analyzedAt: 분석 시각 정렬용
+      // pageUrl: URL별 필터링용
+      analysisHistory: `
+        &id,
+        analyzedAt,
+        pageUrl
       `,
     });
   }

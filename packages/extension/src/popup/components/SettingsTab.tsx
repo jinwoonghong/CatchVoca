@@ -815,6 +815,35 @@ export function SettingsTab() {
           </button>
         </div>
 
+        <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+          <div>
+            <div className="font-medium text-gray-900">⚠️ AI 사용량 제한 해제</div>
+            <div className="text-sm text-gray-600">
+              개발/테스트용 - 일일 사용량 제한을 해제합니다
+            </div>
+            <div className="text-xs text-orange-600 mt-1">
+              💡 나중에 다시 켤 수 있습니다
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setSettings((prev) => ({
+                ...prev,
+                disableAIUsageLimit: !prev.disableAIUsageLimit,
+              }));
+            }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.disableAIUsageLimit ? 'bg-orange-600' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.disableAIUsageLimit ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
         {settings.highlightSettings.enabled && (
           <div className="ml-4 space-y-2">
             <div className="flex items-center justify-between text-sm">

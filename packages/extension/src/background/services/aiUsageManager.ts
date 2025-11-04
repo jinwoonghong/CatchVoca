@@ -36,6 +36,17 @@ export async function canUseAI(): Promise<{
   isPro: boolean;
 }> {
   try {
+    // 설정에서 사용량 제한 해제 여부 확인
+    const disableLimit = await getAIUsageLimitDisabled();
+    if (disableLimit) {
+      logger.info('AI usage limit disabled by user setting');
+      return {
+        allowed: true,
+        remaining: -1, // 무제한
+        isPro: false,
+      };
+    }
+
     // Pro 상태 확인
     const proStatus = await getProStatus();
     const isPro = proStatus.active;
@@ -224,4 +235,18 @@ export async function getAIUsageStats(): Promise<{
     limit,
     remaining,
   };
+}
+
+/**
+ * 설정에서 AI 사용량 제한 해제 여부 조회
+ */
+async function getAIUsageLimitDisabled(): Promise<boolean> {
+  try {
+    const result = await chrome.storage.local.get('settings');
+    const settings = result.settings;
+    return settings?.disableAIUsageLimit === true;
+  } catch (error) {
+    logger.error('Failed to get AI usage limit setting', error);
+    return false;
+  }
 }

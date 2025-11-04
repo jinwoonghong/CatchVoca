@@ -68,7 +68,7 @@ function App() {
 
       {/* Content */}
       <main className="p-4">
-        {activeTab === 'collect' && <CollectTab />}
+        {activeTab === 'collect' && <CollectTab onSwitchToSettings={() => setActiveTab('settings')} />}
         {activeTab === 'review' && <QuizTab />}
         {activeTab === 'library' && <LibraryTab />}
         {activeTab === 'settings' && <SettingsTab />}

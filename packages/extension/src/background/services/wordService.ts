@@ -71,7 +71,23 @@ export async function saveWord(wordData: Partial<WordEntryInput>): Promise<strin
 
   logger.info(`Word saved: ${wordId}`);
 
-  // 6. 사용자 알림
+  // 6. Content Script에 단어 저장 알림 (하이라이트 업데이트용)
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]?.id) {
+      chrome.tabs.sendMessage(tabs[0].id, {
+        type: 'WORD_SAVED',
+        word: wordData.word,
+      }).catch((err) => {
+        // Content script가 없는 페이지에서는 실패할 수 있음 (무시)
+        logger.debug('Failed to send WORD_SAVED message', err);
+      });
+    }
+  } catch (err) {
+    logger.debug('Failed to notify content script', err);
+  }
+
+  // 7. 사용자 알림
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon48.png',

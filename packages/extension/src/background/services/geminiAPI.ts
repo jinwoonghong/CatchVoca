@@ -20,8 +20,18 @@ const GEMINI_API_URL = import.meta.env.VITE_GEMINI_API_URL || 'https://generativ
  */
 async function getGeminiApiKey(): Promise<string> {
   try {
-    const result = await chrome.storage.sync.get('settings');
-    const apiKey = result.settings?.geminiApiKey || '';
+    // Settings는 chrome.storage.local에 'catchvoca_settings' 키로 저장됨
+    const result = await chrome.storage.local.get('catchvoca_settings');
+
+    // 디버깅: storage 내용 확인
+    logger.info('chrome.storage.local content', {
+      hasSettings: !!result.catchvoca_settings,
+      settingsKeys: result.catchvoca_settings ? Object.keys(result.catchvoca_settings) : [],
+      hasApiKey: !!result.catchvoca_settings?.geminiApiKey,
+      apiKeyLength: result.catchvoca_settings?.geminiApiKey?.length || 0,
+    });
+
+    const apiKey = result.catchvoca_settings?.geminiApiKey || '';
 
     // 개발 모드: 환경 변수 fallback
     if (!apiKey && import.meta.env.DEV) {
@@ -30,6 +40,15 @@ async function getGeminiApiKey(): Promise<string> {
         logger.info('Using development API key from environment variable');
         return devKey;
       }
+    }
+
+    if (apiKey) {
+      logger.info('API key loaded from storage', {
+        length: apiKey.length,
+        prefix: apiKey.substring(0, 10) + '...',
+      });
+    } else {
+      logger.warn('No API key found in storage');
     }
 
     return apiKey;
@@ -68,8 +87,17 @@ export async function analyzePageWithGemini(
   return withRetry(
     async () => {
       const prompt = buildAnalysisPrompt(request);
+      const requestUrl = `${GEMINI_API_URL}?key=${apiKey}`;
 
-      const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      // 디버깅: 요청 정보 로깅 (API 키는 마스킹)
+      logger.info('Gemini API request', {
+        url: GEMINI_API_URL,
+        apiKeyLength: apiKey.length,
+        apiKeyPrefix: apiKey.substring(0, 10) + '...',
+        contentLength: prompt.length,
+      });
+
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -93,9 +121,25 @@ export async function analyzePageWithGemini(
         }),
       });
 
+      // 디버깅: 응답 정보 로깅
+      logger.info('Gemini API response', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      });
+
       if (!response.ok) {
+        // 에러 응답 본문 읽기
+        let errorBody = '';
+        try {
+          errorBody = await response.text();
+          logger.error('Gemini API error response body', { body: errorBody });
+        } catch (e) {
+          logger.error('Failed to read error response body', e);
+        }
+
         throw new NetworkError(
-          `Gemini API returned ${response.status}`,
+          `Gemini API returned ${response.status}: ${response.statusText}. ${errorBody}`,
           response.status,
           GEMINI_API_URL
         );

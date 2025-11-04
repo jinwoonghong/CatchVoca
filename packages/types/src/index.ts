@@ -204,6 +204,33 @@ export interface AppsScriptResponse {
 }
 
 // ============================================================================
+// AI Analysis History Types
+// ============================================================================
+
+/**
+ * AI 분석 이력 항목
+ */
+export interface AIAnalysisHistory {
+  // === 식별자 ===
+  id: string; // PK, format: "analysis::${timestamp}"
+
+  // === 페이지 정보 ===
+  pageUrl: string; // 분석한 페이지 URL
+  pageTitle: string; // 페이지 제목
+
+  // === 분석 결과 ===
+  summary: string; // AI 요약
+  difficulty: 'beginner' | 'intermediate' | 'advanced'; // 난이도
+  recommendedWords: RecommendedWord[]; // 추천 단어 목록
+
+  // === 타임스탬프 ===
+  analyzedAt: number; // 분석 시각 (timestamp)
+
+  // === 메타 정보 ===
+  savedWordsCount: number; // 이 분석에서 저장한 단어 수 (초기값: 0)
+}
+
+// ============================================================================
 // PDF Support Types
 // ============================================================================
 
@@ -402,6 +429,7 @@ export interface Settings {
   aiAnalysisEnabled: boolean; // AI 분석 활성화
   highlightSettings: HighlightSettings; // 하이라이트 설정
   geminiApiKey?: string; // Gemini API 키 (사용자 입력)
+  disableAIUsageLimit: boolean; // AI 사용량 제한 해제 (개발/테스트용)
 
   // 편의 기능 설정 (Phase 2-C)
   pdfSupportEnabled: boolean; // PDF 지원 활성화
@@ -434,6 +462,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showTooltip: true,
   },
   geminiApiKey: undefined,
+  disableAIUsageLimit: false,
   pdfSupportEnabled: true,
   keyboardSettings: {
     quickLookup: {

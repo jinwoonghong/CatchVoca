@@ -6,10 +6,14 @@
  * - AI 웹페이지 분석 (Phase 2-B)
  */
 
-import { useState } from 'react';
-import type { LookupResult, GeminiAnalysisResponse, RecommendedWord, WordImportance } from '@catchvoca/types';
+import { useState, useEffect } from 'react';
+import type { LookupResult, GeminiAnalysisResponse, RecommendedWord, WordImportance, AIAnalysisHistory } from '@catchvoca/types';
 
-export function CollectTab() {
+interface CollectTabProps {
+  onSwitchToSettings: () => void;
+}
+
+export function CollectTab({ onSwitchToSettings }: CollectTabProps) {
   const [searchWord, setSearchWord] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +28,35 @@ export function CollectTab() {
   const [analysisResult, setAnalysisResult] = useState<GeminiAnalysisResponse | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [showAnalysisPanel, setShowAnalysisPanel] = useState(false);
+
+  // AI 분석 이력 상태
+  const [analysisHistories, setAnalysisHistories] = useState<AIAnalysisHistory[]>([]);
+  const [showHistoryPanel, setShowHistoryPanel] = useState(true);
+
+  // 추천 단어 상태
+  const [expandedWords, setExpandedWords] = useState<Set<string>>(new Set()); // 펼쳐진 단어들
+  const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set()); // 선택된 단어들
+  const [wordLookupCache, setWordLookupCache] = useState<Map<string, LookupResult>>(new Map()); // 단어 뜻 캐시
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
+
+  // 컴포넌트 마운트 시 분석 이력 로드
+  useEffect(() => {
+    loadAnalysisHistory();
+  }, []);
+
+  const loadAnalysisHistory = async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_ANALYSIS_HISTORY',
+      });
+
+      if (response.success) {
+        setAnalysisHistories(response.data || []);
+      }
+    } catch (err) {
+      console.error('[CollectTab] Failed to load analysis history:', err);
+    }
+  };
 
   /**
    * 단어 검색 핸들러
@@ -207,7 +240,7 @@ export function CollectTab() {
       if (!settingsResponse.success || !settingsResponse.data?.geminiApiKey) {
         // API 키가 없으면 Settings 탭으로 이동
         if (confirm('AI 분석 기능을 사용하려면 Gemini API 키가 필요합니다.\n\n설정 페이지로 이동하시겠습니까?')) {
-          chrome.runtime.sendMessage({ type: 'SWITCH_TO_SETTINGS' });
+          onSwitchToSettings();
         }
         return;
       }
@@ -274,6 +307,9 @@ export function CollectTab() {
 
         // 5. Content script에 하이라이트 적용 요청
         await applyHighlights(tab.id, analysisResponse.data.recommendedWords);
+
+        // 6. 분석 이력 다시 로드
+        await loadAnalysisHistory();
       } else {
         setAiError(analysisResponse.error || 'AI 분석에 실패했습니다.');
       }
@@ -327,11 +363,158 @@ export function CollectTab() {
   };
 
   /**
-   * 추천 단어 클릭 시 검색
+   * 추천 단어 클릭 시 뜻 토글
    */
-  const handleRecommendedWordClick = (word: string) => {
-    setSearchWord(word);
-    handleSearch();
+  const handleRecommendedWordClick = async (word: string) => {
+    // 이미 펼쳐져 있으면 접기
+    if (expandedWords.has(word)) {
+      const newExpanded = new Set(expandedWords);
+      newExpanded.delete(word);
+      setExpandedWords(newExpanded);
+      return;
+    }
+
+    // 펼치기 - 캐시에 있으면 캐시 사용, 없으면 API 조회
+    const newExpanded = new Set(expandedWords);
+    newExpanded.add(word);
+    setExpandedWords(newExpanded);
+
+    if (!wordLookupCache.has(word)) {
+      // API 조회
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'LOOKUP_WORD',
+          word: word.trim(),
+        });
+
+        if (response.success) {
+          const newCache = new Map(wordLookupCache);
+          newCache.set(word, response.data);
+          setWordLookupCache(newCache);
+        }
+      } catch (err) {
+        console.error('[CollectTab] Lookup error:', err);
+      }
+    }
+  };
+
+  /**
+   * 체크박스 토글
+   */
+  const handleCheckboxToggle = (word: string) => {
+    const newSelected = new Set(selectedWords);
+    if (newSelected.has(word)) {
+      newSelected.delete(word);
+    } else {
+      newSelected.add(word);
+    }
+    setSelectedWords(newSelected);
+  };
+
+  /**
+   * 전체 선택/해제
+   */
+  const handleSelectAll = () => {
+    if (!analysisResult) return;
+
+    if (selectedWords.size === analysisResult.recommendedWords.length) {
+      // 전체 해제
+      setSelectedWords(new Set());
+    } else {
+      // 전체 선택
+      const allWords = new Set(analysisResult.recommendedWords.map(w => w.word));
+      setSelectedWords(allWords);
+    }
+  };
+
+  /**
+   * 선택한 단어들 일괄 저장
+   */
+  const handleBulkSave = async () => {
+    if (selectedWords.size === 0) return;
+
+    setIsBulkSaving(true);
+    setError(null);
+
+    try {
+      const wordsToSave = Array.from(selectedWords);
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const word of wordsToSave) {
+        try {
+          // 단어 뜻 조회 (캐시 사용 또는 새로 조회)
+          let lookup = wordLookupCache.get(word);
+          if (!lookup) {
+            const response = await chrome.runtime.sendMessage({
+              type: 'LOOKUP_WORD',
+              word: word.trim(),
+            });
+            if (response.success) {
+              lookup = response.data;
+            }
+          }
+
+          if (lookup) {
+            // 단어 저장
+            const saveResponse = await chrome.runtime.sendMessage({
+              type: 'SAVE_WORD',
+              wordData: {
+                word: word,
+                definitions: lookup.definitions,
+                phonetic: lookup.phonetic,
+                audioUrl: lookup.audioUrl,
+                context: word,
+                url: window.location.href,
+                sourceTitle: document.title,
+              },
+            });
+
+            if (saveResponse.success) {
+              successCount++;
+            } else {
+              failCount++;
+            }
+          } else {
+            failCount++;
+          }
+        } catch (err) {
+          console.error(`[CollectTab] Failed to save word: ${word}`, err);
+          failCount++;
+        }
+      }
+
+      // 결과 표시
+      if (successCount > 0) {
+        setSaveSuccess(true);
+        setError(null);
+        alert(`✅ ${successCount}개 단어가 저장되었습니다!${failCount > 0 ? `\n⚠️ ${failCount}개 단어 저장 실패` : ''}`);
+
+        // 선택 초기화
+        setSelectedWords(new Set());
+      } else {
+        setError('단어 저장에 실패했습니다.');
+      }
+    } catch (err) {
+      setError('일괄 저장 중 오류가 발생했습니다.');
+      console.error('[CollectTab] Bulk save error:', err);
+    } finally {
+      setIsBulkSaving(false);
+    }
+  };
+
+  /**
+   * 분석 이력 클릭 시 해당 분석 결과 표시
+   */
+  const handleHistoryClick = (history: AIAnalysisHistory) => {
+    // 분석 결과를 현재 분석 결과로 설정
+    setAnalysisResult({
+      summary: history.summary,
+      recommendedWords: history.recommendedWords,
+      difficulty: history.difficulty,
+    });
+    setShowAnalysisPanel(true);
+    setAiError(null);
   };
 
   return (
@@ -385,6 +568,65 @@ export function CollectTab() {
             {isAnalyzing ? '분석 중...' : '✨ 분석 시작'}
           </button>
         </div>
+
+        {/* 최근 분석 이력 (간단 버전) */}
+        {analysisHistories.length > 0 && showHistoryPanel && (
+          <div className="mt-3 pt-3 border-t border-purple-200">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium text-gray-700">📋 최근 분석</h4>
+              <button
+                onClick={() => setShowHistoryPanel(false)}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                숨기기
+              </button>
+            </div>
+            <div className="space-y-2">
+              {analysisHistories.slice(0, 3).map((history) => (
+                <div
+                  key={history.id}
+                  className="p-2 bg-white border border-purple-100 rounded text-xs cursor-pointer hover:border-purple-300 hover:shadow-sm transition-all"
+                  onClick={() => handleHistoryClick(history)}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="font-medium text-gray-900 truncate flex-1">{history.pageTitle}</div>
+                    <a
+                      href={history.pageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-2 text-purple-600 hover:text-purple-800 text-sm"
+                      title="원본 페이지 열기"
+                    >
+                      🔗
+                    </a>
+                  </div>
+                  <div className="text-gray-600 text-xs">
+                    {history.recommendedWords.length}개 단어 • {new Date(history.analyzedAt).toLocaleDateString()}
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {history.recommendedWords.slice(0, 5).map((word, idx) => (
+                      <button
+                        key={idx}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSearchWord(word.word);
+                          handleSearch();
+                        }}
+                        className="px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs"
+                      >
+                        {word.word}
+                      </button>
+                    ))}
+                    {history.recommendedWords.length > 5 && (
+                      <span className="px-2 py-1 text-gray-500 text-xs">+{history.recommendedWords.length - 5}개 더</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* AI 분석 결과 패널 */}
@@ -439,29 +681,121 @@ export function CollectTab() {
 
               {/* 추천 단어 목록 */}
               <div>
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                  추천 단어 ({analysisResult.recommendedWords.length}개)
-                </h4>
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {analysisResult.recommendedWords.map((word, index) => (
-                    <div
-                      key={index}
-                      onClick={() => handleRecommendedWordClick(word.word)}
-                      className="p-3 bg-yellow-50 border border-yellow-200 rounded-md cursor-pointer hover:bg-yellow-100 transition-colors"
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold text-gray-700">
+                    추천 단어 ({analysisResult.recommendedWords.length}개)
+                  </h4>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSelectAll}
+                      className="text-xs text-blue-600 hover:text-blue-800"
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-gray-900">{word.word}</span>
-                        <span className="text-xs text-gray-600">점수: {word.importanceScore}</span>
+                      {selectedWords.size === analysisResult.recommendedWords.length ? '전체 해제' : '전체 선택'}
+                    </button>
+                    {selectedWords.size > 0 && (
+                      <button
+                        onClick={handleBulkSave}
+                        disabled={isBulkSaving}
+                        className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                      >
+                        {isBulkSaving ? '저장 중...' : `${selectedWords.size}개 저장`}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {analysisResult.recommendedWords.map((word, index) => {
+                    const isExpanded = expandedWords.has(word.word);
+                    const isSelected = selectedWords.has(word.word);
+                    const lookup = wordLookupCache.get(word.word);
+
+                    return (
+                      <div
+                        key={index}
+                        className="bg-yellow-50 border border-yellow-200 rounded-md overflow-hidden"
+                      >
+                        <div className="p-3">
+                          <div className="flex items-start gap-2">
+                            {/* 체크박스 */}
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                handleCheckboxToggle(word.word);
+                              }}
+                              className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+
+                            {/* 단어 정보 */}
+                            <div className="flex-1">
+                              <div
+                                onClick={() => handleRecommendedWordClick(word.word)}
+                                className="cursor-pointer hover:bg-yellow-100 -m-1 p-1 rounded transition-colors"
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium text-gray-900">{word.word}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-600">점수: {word.importanceScore}</span>
+                                    <span className="text-gray-400 text-xs">
+                                      {isExpanded ? '▼' : '▶'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {word.reasons.map((reason, idx) => (
+                                    <span key={idx} className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded">
+                                      {reason}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* 단어 뜻 (펼쳐졌을 때만 표시) */}
+                              {isExpanded && (
+                                <div className="mt-3 pt-3 border-t border-yellow-300">
+                                  {lookup ? (
+                                    <div className="space-y-2">
+                                      {/* 발음 */}
+                                      {lookup.phonetic && (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-sm text-gray-600">{lookup.phonetic}</span>
+                                          {lookup.audioUrl && (
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                new Audio(lookup.audioUrl).play();
+                                              }}
+                                              className="text-blue-600 hover:text-blue-800"
+                                            >
+                                              🔊
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* 정의 */}
+                                      <div className="space-y-2">
+                                        {lookup.definitions.map((def, idx) => (
+                                          <div key={idx} className="text-sm">
+                                            <div className="text-gray-700">
+                                              {idx + 1}. {def}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="text-sm text-gray-500">불러오는 중...</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {word.reasons.map((reason, idx) => (
-                          <span key={idx} className="text-xs bg-yellow-200 text-yellow-800 px-2 py-0.5 rounded">
-                            {reason}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

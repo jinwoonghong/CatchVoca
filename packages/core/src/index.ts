@@ -12,6 +12,7 @@ export {
   ReviewStateRepository,
   reviewStateRepository,
 } from './repositories/ReviewStateRepository';
+export * as AIAnalysisHistoryRepository from './repositories/AIAnalysisHistoryRepository';
 
 // Utils
 export {

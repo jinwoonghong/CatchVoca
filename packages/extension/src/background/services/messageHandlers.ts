@@ -6,6 +6,7 @@
 import {
   wordRepository,
   reviewStateRepository,
+  AIAnalysisHistoryRepository,
   eventBus,
   db,
   calculateNextReview,
@@ -68,6 +69,10 @@ export async function handleMessage(
         await handleGetReviewStats(sendResponse);
         break;
 
+      case 'GET_REVIEW_STATE':
+        await handleGetReviewState(message, sendResponse);
+        break;
+
       case 'GET_DUE_REVIEWS':
         await handleGetDueReviews(message, sendResponse);
         break;
@@ -119,6 +124,10 @@ export async function handleMessage(
 
       case 'GET_AI_USAGE_STATS':
         await handleGetAIUsageStats(sendResponse);
+        break;
+
+      case 'GET_ANALYSIS_HISTORY':
+        await handleGetAnalysisHistory(sendResponse);
         break;
 
       case 'GET_RECOMMENDED_WORDS':
@@ -211,6 +220,15 @@ async function handleIncrementViewCount(message: any, sendResponse: (response: M
 async function handleGetReviewStats(sendResponse: (response: MessageResponse) => void) {
   const stats = await reviewStateRepository.getReviewStats();
   sendResponse({ success: true, data: stats });
+}
+
+async function handleGetReviewState(message: any, sendResponse: (response: MessageResponse) => void) {
+  try {
+    const reviewState = await reviewStateRepository.findByWordId(message.wordId);
+    sendResponse({ success: true, data: reviewState });
+  } catch (error) {
+    sendResponse({ success: false, error: 'Failed to get review state' });
+  }
 }
 
 async function handleGetDueReviews(message: any, sendResponse: (response: MessageResponse) => void) {
@@ -511,10 +529,39 @@ async function handleAnalyzePageAI(
     // 사용량 증가
     await incrementAIUsage();
 
+    // 분석 이력 저장
+    try {
+      await AIAnalysisHistoryRepository.createAnalysisHistory({
+        pageUrl: request.pageUrl,
+        pageTitle: request.pageTitle,
+        summary: result.summary,
+        difficulty: result.difficulty,
+        recommendedWords: result.recommendedWords,
+      });
+      logger.info('AI analysis history saved');
+    } catch (historyError) {
+      logger.error('Failed to save analysis history', historyError);
+      // 이력 저장 실패는 메인 기능에 영향을 주지 않음
+    }
+
     logger.info('AI analysis completed', {
       url: request.pageUrl,
       recommendedWords: result.recommendedWords.length,
     });
+
+    // Content Script에 AI 분석 완료 알림 (추천 단어 하이라이트 업데이트용)
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: 'AI_ANALYSIS_COMPLETED',
+        }).catch((err) => {
+          logger.debug('Failed to send AI_ANALYSIS_COMPLETED message', err);
+        });
+      }
+    } catch (err) {
+      logger.debug('Failed to notify content script', err);
+    }
 
     sendResponse({
       success: true,
@@ -525,6 +572,28 @@ async function handleAnalyzePageAI(
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'AI analysis failed',
+    });
+  }
+}
+
+/**
+ * AI 분석 이력 조회 핸들러
+ */
+async function handleGetAnalysisHistory(
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const histories = await AIAnalysisHistoryRepository.findAllAnalysisHistory(20);
+
+    sendResponse({
+      success: true,
+      data: histories,
+    });
+  } catch (error) {
+    logger.error('Failed to get analysis history', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get analysis history',
     });
   }
 }
