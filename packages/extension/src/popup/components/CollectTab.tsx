@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import type { LookupResult, GeminiAnalysisResponse, RecommendedWord, WordImportance, AIAnalysisHistory } from '@catchvoca/types';
+import type { LookupResult, GeminiAnalysisResponse, RecommendedWord, AIAnalysisHistory } from '@catchvoca/types';
 
 interface CollectTabProps {
   onSwitchToSettings: () => void;
@@ -335,27 +335,16 @@ export function CollectTab({ onSwitchToSettings }: CollectTabProps) {
         ? wordsResponse.data.map((w: any) => w.normalizedWord || w.word.toLowerCase())
         : [];
 
-      // WordImportance 형식으로 변환
-      const wordImportance: WordImportance[] = recommendedWords.map((word) => ({
-        word: word.word,
-        normalizedWord: word.normalizedWord,
-        cocaScore: 0, // Gemini 응답에는 없으므로 0으로 설정
-        awlScore: 0,
-        testScore: 0,
-        contextScore: word.importanceScore,
-        totalScore: word.importanceScore,
-      }));
-
-      // Content script에 메시지 전송
+      // Content script에 메시지 전송 (RecommendedWord 그대로 전송)
       await chrome.tabs.sendMessage(tabId, {
         type: 'APPLY_AI_HIGHLIGHTS',
         learned: learnedWords,
-        recommended: wordImportance,
+        recommended: recommendedWords,
       });
 
       console.log('[CollectTab] Highlights applied:', {
         learnedCount: learnedWords.length,
-        recommendedCount: wordImportance.length,
+        recommendedCount: recommendedWords.length,
       });
     } catch (err) {
       console.error('[CollectTab] Apply highlights error:', err);
