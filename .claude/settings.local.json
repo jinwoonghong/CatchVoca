@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm clean:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm --filter @catchvoca/core typecheck:*)",
+      "Bash(find:*)",
+      "Bash(cat:*)",
+      "Bash(pnpm --filter @catchvoca/types tsc:*)",
+      "Bash(npx tsc --build)",
+      "Bash(pnpm --filter @catchvoca/core test)",
+      "SlashCommand(/sc:implement AI 하이라이트 기능 (단어별 색상 하이라이트 + 중요도 표시) 및 광고 제거 기능(결제 시)을 Phase 2 계획에 추가)",
+      "SlashCommand(/sc:implement:*)",
+      "Bash(pnpm --filter @catchvoca/extension typecheck:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e:*)",
+      "Bash(node:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm --filter @catchvoca/types build:*)",
+      "Bash(pnpm build:extension:*)",
+      "SlashCommand(/sc:build)",
+      "Bash(pnpm --filter extension typecheck:*)",
+      "Bash(pnpm --filter extension build:*)",
+      "SlashCommand(/sc:analyze)",
+      "Bash(pnpm --filter @catchvoca/core build:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

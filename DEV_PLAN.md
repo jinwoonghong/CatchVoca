@@ -237,66 +237,123 @@ db.version(2).stores({
 
 ---
 
-### Week 5-6: Apps Script 모바일 퀴즈
-**목표**: 모바일 전용 퀴즈 웹앱 (Pro 전용)
+### Week 5-6: 모바일 퀴즈 (URL Hash 기반) ✅ **완료**
+**목표**: 서버 불필요, 완전 로컬 기반 모바일 퀴즈 링크 공유
+
+**완료 날짜**: 2025-01-XX
+**구현 내용**:
+- ✅ LZ-String 라이브러리 통합 (URL 압축)
+- ✅ 모바일 퀴즈 링크 생성 서비스 (mobileQuizService.ts)
+- ✅ LibraryTab에 "📱 모바일 퀴즈 링크 생성" 버튼 추가
+- ✅ 모바일 PWA HTML 페이지 (public/mobile/index.html)
+- ✅ Quiz.js 컴포넌트 (LZ-String 디코딩, 퀴즈 로직)
+- ✅ PWA manifest.json (홈 화면 추가 지원)
+- ✅ 단어 우선순위 정렬 (복습 예정 > easeFactor 낮은 순 > 최신순)
+- ✅ URL 길이 검증 (2048자 제한)
+- ✅ 클립보드 자동 복사 기능
 
 #### 주요 작업
-1. **Apps Script 프로젝트 생성**
-   - Google Apps Script 신규 프로젝트
-   - 웹 앱으로 배포 (Anyone 접근)
+1. **LZ-String 라이브러리 추가**
+   ```bash
+   pnpm add lz-string
+   pnpm add -D @types/lz-string
+   ```
 
-2. **doPost() 구현 (스냅샷 저장)**
-   ```javascript
-   function doPost(e) {
-     const data = JSON.parse(e.postData.contents);
-     const snapshotId = Utilities.getUuid().substring(0, 8);
-     const folder = getOrCreateFolder('CheckVoca_Snapshots');
-     folder.createFile(`snapshot_${snapshotId}.json`, JSON.stringify(data.snapshot));
+2. **링크 생성 함수 (Extension)**
+   ```typescript
+   import LZString from 'lz-string';
 
-     // 캐싱
-     CacheService.getUserCache().put(`meta_${snapshotId}`, metadata, 21600);
+   async function generateQuizLink(): Promise<string> {
+     // 복습 예정 단어 가져오기 (최대 50개)
+     const dueWords = await reviewStateRepository.findDueReviews({ limit: 50 });
 
-     return ContentService.createTextOutput(JSON.stringify({
-       success: true,
-       mobileUrl: `${webAppUrl}?id=${snapshotId}`
-     }));
+     // 필요한 데이터만 추출
+     const snapshot = {
+       words: dueWords.map(w => ({
+         id: w.id,
+         word: w.word,
+         definitions: w.definitions,
+         phonetic: w.phonetic,
+         context: w.context
+       })),
+       createdAt: Date.now()
+     };
+
+     // 압축 (60% 압축률)
+     const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(snapshot));
+
+     // URL 생성 (최대 ~8000자, 브라우저 제한)
+     return `https://catchvoca.app/quiz#data=${compressed}`;
    }
    ```
 
-3. **doGet() 구현 (모바일 웹앱 제공)**
-   ```javascript
-   function doGet(e) {
-     const snapshotId = e.parameter.id;
-     const metadata = CacheService.getUserCache().get(`meta_${snapshotId}`);
-     const file = DriveApp.getFileById(metadata.fileId);
-     const snapshot = file.getBlob().getDataAsString();
+3. **Popup UI 통합**
+   - "모바일 퀴즈" 버튼 추가
+   - 클릭 시 링크 생성 → 클립보드 자동 복사
+   - 토스트 알림: "링크가 복사되었습니다. 카카오톡에 공유하세요!"
+   - Pro/무료 게이팅:
+     - 무료: 3초 전면 광고 → 링크 생성
+     - Pro: 즉시 링크 생성
 
-     const template = HtmlService.createTemplateFromFile('MobileQuiz');
-     template.snapshot = snapshot;
-     return template.evaluate();
+4. **모바일 PWA 페이지**
+   ```typescript
+   // /quiz 페이지
+   function parseQuizData(): Snapshot | null {
+     const hash = window.location.hash.substring(6); // #data= 제거
+     if (!hash) return null;
+
+     try {
+       const decompressed = LZString.decompressFromEncodedURIComponent(hash);
+       return JSON.parse(decompressed);
+     } catch (error) {
+       console.error('Failed to parse quiz data', error);
+       return null;
+     }
+   }
+
+   function QuizPage() {
+     const snapshot = parseQuizData();
+
+     if (!snapshot) {
+       return <ErrorScreen message="유효하지 않은 퀴즈 링크입니다" />;
+     }
+
+     // 24시간 제한 검증
+     const isExpired = Date.now() - snapshot.createdAt > 24 * 60 * 60 * 1000;
+     if (isExpired) {
+       return <ErrorScreen message="만료된 링크입니다 (24시간 제한)" />;
+     }
+
+     return <MobileQuiz words={snapshot.words} />;
    }
    ```
 
-4. **MobileQuiz.html (모바일 최적화)**
+5. **MobileQuiz 컴포넌트**
    - 세로 모드 전체 화면 UI
-   - 터치 버튼: [정답 보기] [모름/어려움/보통/쉬움]
-   - SM-2 계산 (간단 버전, 로컬 실행)
+   - 터치 제스처: 왼쪽 스와이프 (다음), 오른쪽 스와이프 (이전)
+   - 평가 버튼: [모름/어려움/보통/쉬움] (4단계)
    - 진행률 표시: N/M (진행도 바)
-   - 완료 화면: 통계 요약
-
-5. **Extension 통합**
-   - Pro/무료 게이팅 시스템
-   - 무료: 3초 인터스티셜 광고 → 30% Pro 제안
-   - Pro: 광고 없이 즉시 생성
-   - QR 코드 생성 (qrcode.react)
-   - 링크 복사 버튼
+   - 완료 화면: 통계 요약 (정답률, 소요시간)
 
 **완료 기준**:
-- ✅ Extension에서 스냅샷 POST 성공
-- ✅ Drive에 JSON 파일 저장 확인
-- ✅ 모바일에서 QR 스캔 → 퀴즈 페이지 로드
-- ✅ 터치 버튼으로 퀴즈 완료 가능
-- ✅ Pro 게이팅 정상 작동
+- ✅ Extension "모바일 퀴즈" 버튼 클릭 → 링크 생성 및 복사
+- ✅ 모바일에서 링크 접속 → 즉시 퀴즈 시작
+- ✅ 50개 단어 정상 로드 (URL 길이 제한 통과)
+- ✅ 터치 제스처 및 평가 버튼 동작
+- ✅ 24시간 만료 검증 정상 작동
+- ✅ Pro 게이팅 정상 작동 (무료 사용자 광고 표시)
+
+**장점**:
+- ✅ 서버 불필요 (100% 로컬)
+- ✅ 개인정보 보호 극대화
+- ✅ 오프라인 동작 가능
+- ✅ 개발/유지보수 비용 제로
+- ✅ 카카오톡 링크 공유 지원
+
+**단점 및 제약**:
+- ❌ URL 길이 제한 (~8000자, 최대 50단어)
+- ❌ 카카오톡 링크 미리보기 불가능
+- ℹ️ 향후 확장: 사용자 증가 시 서버 기반 옵션 추가 가능
 
 ---
 
@@ -621,12 +678,311 @@ describe('SM-2 Algorithm', () => {
 
 ---
 
+## 🚀 Phase 2 기능 계획 (v0.2.0 이후)
+
+### Phase 2-A: Pro 사용자 관리 및 광고 시스템 (1주)
+**목표**: 무료/Pro 기능 차별화 및 수익화 기반 구축
+
+#### 핵심 작업
+1. **Pro 상태 관리**
+   - ProStatus 인터페이스 구현 (Stripe 연동)
+   - Settings에 Pro 상태 저장/조회
+   - Pro 게이팅 HOC 컴포넌트
+   - 무료/Pro 기능 분리 체계
+
+2. **광고 시스템 통합**
+   - Google AdSense SDK 통합
+   - 배너 광고 (퀴즈 화면 하단: 320x50 또는 728x90)
+   - 전면 광고 (모바일 링크 생성, CSV 내보내기: 3초)
+   - Pro 사용자 자동 광고 제거 로직
+
+3. **Stripe 구독 관리**
+   - Stripe Checkout 통합
+   - 구독 상태 실시간 확인
+   - 만료 처리 및 알림
+
+---
+
+### Phase 2-B: AI 웹페이지 분석 및 하이라이트 (2주) ✅ **완료**
+**목표**: AI 기반 웹페이지 분석 및 학습 단어 하이라이트
+
+**완료 날짜**: 2025-01-XX
+**구현 내용**:
+- ✅ Gemini 1.5 Flash API 통합 (geminiAPI.ts)
+- ✅ 단어 중요도 알고리즘 구현 (COCA 40% + AWL 30% + TOEIC/TOEFL 20% + Gemini 10%)
+- ✅ AI 사용량 관리 시스템 (무료: 3회/일, Pro: 무제한)
+- ✅ AI 하이라이트 시스템 (녹색=학습완료, 노란색=추천 단어)
+- ✅ Settings UI에 AI 설정 섹션 추가
+- ✅ Pro/무료 기능 차별화 구현
+
+#### Gemini API 통합
+1. **API 프록시 구축** (Vercel Edge Function)
+   ```typescript
+   // api/gemini.ts (Vercel)
+   export default async function handler(req: Request) {
+     const { content } = await req.json();
+     const apiKey = process.env.GEMINI_API_KEY; // 서버 측 보관
+
+     const genAI = new GoogleGenerativeAI(apiKey);
+     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+     const result = await model.generateContent(
+       `다음 웹페이지에서 학습할 만한 중요 단어를 추출하세요:\n\n${content}`
+     );
+
+     return new Response(JSON.stringify({ analysis: result.response.text() }));
+   }
+   ```
+
+2. **페이지 분석 기능**
+   - Content Script에서 전체 페이지 텍스트 추출
+   - 중요 텍스트 우선순위 결정 (헤더, 본문, 리스트)
+   - Gemini API 호출 (프롬프트 엔지니어링)
+   - 분석 결과 캐싱 (IndexedDB)
+
+3. **사용량 제한 시스템**
+   ```typescript
+   // Chrome Storage 기반 일일 사용량 추적
+   interface AIUsage {
+     date: string; // YYYY-MM-DD
+     count: number;
+   }
+
+   async function checkDailyLimit(isPro: boolean): Promise<{ allowed: boolean; remaining: number }> {
+     if (isPro) return { allowed: true, remaining: -1 };
+
+     const today = new Date().toDateString();
+     const { aiUsage } = await chrome.storage.local.get(['aiUsage']);
+
+     if (aiUsage?.date !== today) {
+       await chrome.storage.local.set({ aiUsage: { date: today, count: 0 } });
+       return { allowed: true, remaining: 3 };
+     }
+
+     const remaining = 3 - aiUsage.count;
+     return { allowed: remaining > 0, remaining };
+   }
+   ```
+
+#### AI 단어 하이라이트
+1. **하이라이트 시스템**
+   - 🟢 **녹색 하이라이트**: 학습 완료 단어 (ReviewState 완료)
+   - 🟡 **노란색 하이라이트**: 추천 학습 단어 (중요도 높음)
+   - 호버 툴팁: 학습 정보 또는 중요도 점수
+
+2. **중요도 알고리즘**
+   ```typescript
+   interface WordImportance {
+     word: string;
+     score: number; // 0-100
+     factors: {
+       cocaFrequency: number; // 40%
+       awlIncluded: boolean; // 30%
+       toeicToefl: boolean; // 20%
+       geminiContext: number; // 10% (Pro만)
+     };
+   }
+
+   function calculateImportance(word: string, context: string, isPro: boolean): number {
+     let score = 0;
+
+     // COCA 빈도 (40%)
+     const cocaRank = getCOCARank(word);
+     score += (1 - cocaRank / 60000) * 40;
+
+     // AWL (30%)
+     if (isInAWL(word)) score += 30;
+
+     // 토익/토플 (20%)
+     if (isInTOEICTOEFL(word)) score += 20;
+
+     // Gemini 문맥 분석 (10%, Pro만)
+     if (isPro) {
+       const contextScore = await analyzeContextImportance(word, context);
+       score += contextScore * 10;
+     }
+
+     return Math.round(score);
+   }
+   ```
+
+3. **Content Script 하이라이트 렌더링**
+   ```typescript
+   function highlightWords(words: WordImportance[]) {
+     const walker = document.createTreeWalker(
+       document.body,
+       NodeFilter.SHOW_TEXT
+     );
+
+     let node;
+     while (node = walker.nextNode()) {
+       words.forEach(({ word, score }) => {
+         if (node.textContent?.includes(word)) {
+           const color = score >= 70 ? '#FBBF24' : score >= 50 ? '#10B981' : null;
+           if (color) highlightText(node, word, color);
+         }
+       });
+     }
+   }
+   ```
+
+---
+
+### Phase 2-C: PDF 지원 및 특수키 조합 (2-3주) ✅ **완료**
+**목표**: PDF 문서 내 단어 조회 및 사용자 정의 단축키
+
+**완료 날짜**: 2025-01-XX
+**구현 내용**:
+- ✅ PDF 페이지 감지 시스템 (pdfDetector.ts)
+- ✅ PDF 텍스트 선택 핸들러 (pdfTextHandler.ts)
+- ✅ Chrome 내장 PDF 뷰어 및 PDF.js 지원
+- ✅ 키보드 단축키 매니저 구현 (Ctrl+click, Alt+click)
+- ✅ 빠른 조회 및 빠른 저장 기능
+- ✅ Settings UI에 PDF/키보드 설정 섹션 추가
+
+#### PDF 지원
+1. **PDF 감지 및 처리**
+   ```typescript
+   async function detectPDFPage(): Promise<boolean> {
+     return document.contentType === 'application/pdf';
+   }
+
+   // PDF.js 통합 (Chrome 내장 PDF 뷰어 분석)
+   function extractPDFText(): string {
+     const textLayer = document.querySelector('.textLayer');
+     return textLayer?.textContent || '';
+   }
+   ```
+
+2. **PDF 텍스트 레이어 접근**
+   - Chrome 내장 PDF 뷰어 텍스트 레이어 분석
+   - PDF.js API 활용 연구
+   - 대안: 커스텀 PDF.js 뷰어 제공
+
+#### 특수키 조합 기능
+1. **KeyboardManager 서비스**
+   ```typescript
+   class KeyboardManager {
+     private shortcuts: Map<string, () => void> = new Map();
+
+     register(key: string, modifiers: string[], handler: () => void) {
+       const combo = [...modifiers, key].join('+');
+       this.shortcuts.set(combo, handler);
+     }
+
+     handleKeyDown(event: KeyboardEvent) {
+       const modifiers = [];
+       if (event.ctrlKey) modifiers.push('Ctrl');
+       if (event.altKey) modifiers.push('Alt');
+       if (event.shiftKey) modifiers.push('Shift');
+
+       const combo = [...modifiers, event.key].join('+');
+       const handler = this.shortcuts.get(combo);
+       if (handler) {
+         event.preventDefault();
+         handler();
+       }
+     }
+   }
+
+   // 사용 예시
+   const km = new KeyboardManager();
+   km.register('D', ['Ctrl', 'Alt'], () => {
+     const selectedText = window.getSelection()?.toString();
+     if (selectedText) lookupWord(selectedText);
+   });
+   ```
+
+2. **Settings UI 단축키 설정**
+   - 키 조합 입력 컴포넌트
+   - 충돌 검사 (브라우저 기본 단축키)
+   - 사전 정의된 추천 단축키 목록
+
+---
+
+### Phase 2-D: 전역 단축키 및 고급 설정 (1주) ✅ **완료 (2025-01-XX)**
+**목표**: Chrome Commands API 활용 전역 단축키 및 UX 개선
+
+**구현 완료 사항**:
+- ✅ Chrome Commands API 전역 단축키 (Ctrl+Shift+S 단어저장, Ctrl+Shift+Q 퀴즈시작)
+- ✅ manifest.json commands 설정 완료
+- ✅ Settings UI 단축키 커스터마이징 안내 추가
+- ✅ 데이터 백업/복원 기능 (JSON export/import)
+- ✅ backupService.ts 구현 (exportAllData, importAllData)
+- ✅ Settings UI 백업/복원 버튼 추가
+- ✅ 메시지 핸들러 통합 (EXPORT_ALL_DATA, IMPORT_ALL_DATA)
+
+#### Chrome Commands 통합
+1. **manifest.json 설정**
+   ```json
+   {
+     "commands": {
+       "toggle-extension": {
+         "suggested_key": {
+           "default": "Ctrl+Shift+V",
+           "mac": "Command+Shift+V"
+         },
+         "description": "CatchVoca 활성/비활성 토글"
+       },
+       "quick-lookup": {
+         "suggested_key": {
+           "default": "Ctrl+Shift+D"
+         },
+         "description": "선택된 단어 즉시 조회"
+       }
+     }
+   }
+   ```
+
+2. **Background Worker 핸들러**
+   ```typescript
+   chrome.commands.onCommand.addListener(async (command) => {
+     if (command === 'toggle-extension') {
+       const { isActive } = await chrome.storage.local.get(['isActive']);
+       await chrome.storage.local.set({ isActive: !isActive });
+       updateBadge(!isActive);
+     } else if (command === 'quick-lookup') {
+       const [tab] = await chrome.tabs.query({ active: true });
+       chrome.tabs.sendMessage(tab.id, { type: 'QUICK_LOOKUP' });
+     }
+   });
+   ```
+
+3. **Badge 상태 표시**
+   ```typescript
+   async function updateBadge(isActive: boolean, wordCount: number = 0) {
+     if (isActive) {
+       chrome.action.setBadgeBackgroundColor({ color: '#10B981' }); // 녹색
+       chrome.action.setBadgeText({ text: wordCount > 0 ? wordCount.toString() : '' });
+     } else {
+       chrome.action.setBadgeBackgroundColor({ color: '#6B7280' }); // 회색
+       chrome.action.setBadgeText({ text: 'OFF' });
+     }
+   }
+   ```
+
+#### UX 개선
+1. **온보딩 튜토리얼**
+   - 단축키 가이드 모달
+   - 첫 실행 시 설정 안내
+   - 기능 소개 슬라이드
+
+2. **설정 화면 개선**
+   - 단축키 재설정 UI
+   - 충돌 감지 및 대안 키 제안
+   - 내보내기/가져오기 설정 백업
+
+---
+
 ## 🎯 다음 단계 (이 문서 이후)
 
 1. ✅ **프로젝트 구조 생성** (폴더, package.json)
 2. ✅ **Dexie 스키마 구현 및 테스트**
 3. ✅ **SM-2 알고리즘 구현 및 테스트**
-4. → **Content Script 구현 시작**
+4. ✅ **Content Script 구현** (Week 3-4 완료)
+5. ✅ **Chrome Extension 완성** (Week 3-4 완료)
+6. → **Week 5-6: Apps Script 모바일 퀴즈**
+7. → **Phase 2: Pro 기능 및 고급 기능 구현**
 
 ---
 
