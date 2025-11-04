@@ -13,8 +13,37 @@ import type {
 const logger = new Logger('GeminiAPI');
 
 // Gemini API 설정
-const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY'; // 실제 사용 시 환경 변수로 관리
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = import.meta.env.VITE_GEMINI_API_URL || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+
+/**
+ * chrome.storage에서 Gemini API 키 가져오기
+ */
+async function getGeminiApiKey(): Promise<string> {
+  try {
+    const result = await chrome.storage.sync.get('settings');
+    const apiKey = result.settings?.geminiApiKey || '';
+
+    // 개발 모드: 환경 변수 fallback
+    if (!apiKey && import.meta.env.DEV) {
+      const devKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+      if (devKey) {
+        logger.info('Using development API key from environment variable');
+        return devKey;
+      }
+    }
+
+    return apiKey;
+  } catch (error) {
+    logger.error('Failed to load Gemini API key from storage', error);
+
+    // 개발 모드: 환경 변수 fallback
+    if (import.meta.env.DEV) {
+      return import.meta.env.VITE_GEMINI_API_KEY || '';
+    }
+
+    return '';
+  }
+}
 
 /**
  * Gemini API로 웹페이지 분석 요청
@@ -28,11 +57,19 @@ export async function analyzePageWithGemini(
     userWordsCount: request.userWords.length,
   });
 
+  // API 키 가져오기
+  const apiKey = await getGeminiApiKey();
+
+  if (!apiKey) {
+    logger.warn('Gemini API key not found');
+    throw new Error('Gemini API 키가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.');
+  }
+
   return withRetry(
     async () => {
       const prompt = buildAnalysisPrompt(request);
 
-      const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -186,17 +223,17 @@ function validateDifficulty(
 }
 
 /**
- * Gemini API 키 설정 (환경 변수에서 로드)
+ * Gemini API 키 설정
+ * @deprecated API 키는 이제 chrome.storage.sync를 통해 관리됩니다
  */
 export function setGeminiAPIKey(_apiKey: string): void {
-  // 실제 구현에서는 chrome.storage 또는 환경 변수에서 로드
-  logger.info('Gemini API key configured');
+  logger.warn('setGeminiAPIKey is deprecated. Use chrome.storage.sync directly.');
 }
 
 /**
  * Gemini API 사용 가능 여부 확인
  */
-export function isGeminiAvailable(): boolean {
-  const keyLength = typeof GEMINI_API_KEY === 'string' ? GEMINI_API_KEY.length : 0;
-  return GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY' && keyLength > 0;
+export async function isGeminiAvailable(): Promise<boolean> {
+  const apiKey = await getGeminiApiKey();
+  return apiKey.length > 0 && apiKey !== 'YOUR_GEMINI_API_KEY';
 }

@@ -401,6 +401,7 @@ export interface Settings {
   // AI 설정 (Phase 2-B)
   aiAnalysisEnabled: boolean; // AI 분석 활성화
   highlightSettings: HighlightSettings; // 하이라이트 설정
+  geminiApiKey?: string; // Gemini API 키 (사용자 입력)
 
   // 편의 기능 설정 (Phase 2-C)
   pdfSupportEnabled: boolean; // PDF 지원 활성화
@@ -432,6 +433,7 @@ export const DEFAULT_SETTINGS: Settings = {
     recommendedColor: '#fbbf24',
     showTooltip: true,
   },
+  geminiApiKey: undefined,
   pdfSupportEnabled: true,
   keyboardSettings: {
     quickLookup: {

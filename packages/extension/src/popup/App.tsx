@@ -16,6 +16,8 @@ function App() {
         setActiveTab('library');
       } else if (message.type === 'SWITCH_TO_QUIZ') {
         setActiveTab('review');
+      } else if (message.type === 'SWITCH_TO_SETTINGS') {
+        setActiveTab('settings');
       }
     };
 

@@ -709,6 +709,61 @@ export function SettingsTab() {
       <div className="space-y-3">
         <h3 className="text-lg font-semibold text-gray-900">AI 기능</h3>
 
+        {/* Gemini API Key 입력 */}
+        <div className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-md space-y-3">
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">
+              🔑 Gemini API 키
+            </label>
+            <p className="text-xs text-gray-600 mb-2">
+              AI 웹페이지 분석 기능을 사용하려면 Google Gemini API 키가 필요합니다
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <input
+              type="password"
+              value={settings.geminiApiKey || ''}
+              onChange={(e) =>
+                setSettings({ ...settings, geminiApiKey: e.target.value })
+              }
+              placeholder="AIzaSy..."
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+            />
+            <button
+              onClick={() => {
+                const input = document.querySelector('input[type="password"]') as HTMLInputElement;
+                if (input) {
+                  input.type = input.type === 'password' ? 'text' : 'password';
+                }
+              }}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 text-sm"
+            >
+              {settings.geminiApiKey ? '👁️' : '👁️‍🗨️'}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <a
+              href="https://ai.google.dev/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+            >
+              🔗 API 키 발급받기 →
+            </a>
+            {settings.geminiApiKey && (
+              <span className="text-xs text-green-600 font-medium">
+                ✅ API 키 등록됨
+              </span>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-500">
+            💡 무료 플랜: 월 4M 토큰 제공 (약 1,500회 분석 가능)
+          </p>
+        </div>
+
         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
           <div>
             <div className="font-medium text-gray-900">AI 분석 활성화</div>
