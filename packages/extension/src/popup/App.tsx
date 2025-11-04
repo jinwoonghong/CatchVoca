@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { CollectTab } from './components/CollectTab';
-import { ReviewTab } from './components/ReviewTab';
+import { QuizTab } from './components/QuizTab';
 import { LibraryTab } from './components/LibraryTab';
 import { SettingsTab } from './components/SettingsTab';
 
@@ -41,7 +41,7 @@ function App() {
             active={activeTab === 'collect'}
             onClick={() => setActiveTab('collect')}
           >
-            📝 수집
+            🔍 검색
           </TabButton>
           <TabButton
             active={activeTab === 'review'}
@@ -53,7 +53,7 @@ function App() {
             active={activeTab === 'library'}
             onClick={() => setActiveTab('library')}
           >
-            📚 라이브러리
+            📚 단어장
           </TabButton>
           <TabButton
             active={activeTab === 'settings'}
@@ -67,7 +67,7 @@ function App() {
       {/* Content */}
       <main className="p-4">
         {activeTab === 'collect' && <CollectTab />}
-        {activeTab === 'review' && <ReviewTab />}
+        {activeTab === 'review' && <QuizTab />}
         {activeTab === 'library' && <LibraryTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </main>

@@ -259,33 +259,89 @@ export function SettingsTab() {
   };
 
   /**
-   * 데이터 내보내기
+   * CSV 형식으로 변환
+   */
+  const convertToCSV = (words: any[]): string => {
+    // CSV 헤더
+    const headers = ['단어', '발음', '정의', '문맥', '조회수'];
+
+    // CSV 행 생성
+    const rows = words.map(word => {
+      // 정의들을 세미콜론으로 구분
+      const definitions = (word.definitions || []).join('; ');
+
+      // 조회수 (숫자)
+      const viewCount = word.viewCount || 0;
+
+      // CSV 필드 이스케이프 처리 (쉼표, 따옴표, 줄바꿈 포함 시)
+      const escapeField = (field: string) => {
+        if (!field) return '';
+        const needsEscape = field.includes(',') || field.includes('"') || field.includes('\n');
+        if (needsEscape) {
+          return `"${field.replace(/"/g, '""')}"`;
+        }
+        return field;
+      };
+
+      return [
+        escapeField(word.word || ''),
+        escapeField(word.phonetic || ''),
+        escapeField(definitions),
+        escapeField(word.context || ''),
+        viewCount,
+      ].join(',');
+    });
+
+    // BOM 추가 (Excel에서 UTF-8 인식을 위해)
+    return '\uFEFF' + [headers.join(','), ...rows].join('\n');
+  };
+
+  /**
+   * 데이터 내보내기 (CSV 형식)
    */
   const handleExportData = async () => {
+    // TODO: Pro 기능 - 광고 팝업 표시
+    // 현재는 일반 확인 팝업으로 대체
+    const confirmed = confirm(
+      '단어장을 CSV 파일로 내보내시겠습니까?\n\n' +
+      '💡 Pro 버전에서는 광고 없이 즉시 다운로드됩니다.'
+    );
+
+    if (!confirmed) return;
+
     setIsExporting(true);
 
     try {
       const response = await chrome.runtime.sendMessage({
-        type: 'EXPORT_ALL_DATA',
+        type: 'GET_ALL_WORDS',
       });
 
-      if (response.success) {
-        const backupData = response.data;
-        const jsonString = JSON.stringify(backupData, null, 2);
-        const blob = new Blob([jsonString], { type: 'application/json' });
+      if (response.success && response.data) {
+        const words = response.data;
+
+        if (words.length === 0) {
+          alert('내보낼 단어가 없습니다.');
+          return;
+        }
+
+        // CSV 변환
+        const csvContent = convertToCSV(words);
+
+        // Blob 생성 및 다운로드
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
 
         const a = document.createElement('a');
         a.href = url;
-        a.download = `catchvoca-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `catchvoca-단어장-${new Date().toISOString().split('T')[0]}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        alert(`백업 완료!\n단어: ${backupData.metadata.totalWords}개`);
+        alert(`✅ CSV 내보내기 완료!\n\n단어 수: ${words.length}개`);
       } else {
-        alert(`내보내기 실패: ${response.error}`);
+        alert(`내보내기 실패: ${response.error || '알 수 없는 오류'}`);
       }
     } catch (err) {
       alert('데이터 내보내기 중 오류가 발생했습니다.');
@@ -767,99 +823,11 @@ export function SettingsTab() {
         )}
       </div>
 
-      {/* PDF 및 키보드 설정 (Phase 2-C) */}
+      {/* 단축키 설정 - 통합된 섹션 */}
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">편의 기능</h3>
+        <h3 className="text-lg font-semibold text-gray-900">⌨️ 단축키 설정</h3>
 
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-          <div>
-            <div className="font-medium text-gray-900">PDF 지원</div>
-            <div className="text-sm text-gray-500">PDF 문서에서 단어 선택</div>
-          </div>
-          <button
-            onClick={() => {
-              setSettings((prev) => ({
-                ...prev,
-                pdfSupportEnabled: !prev.pdfSupportEnabled,
-              }));
-            }}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              settings.pdfSupportEnabled ? 'bg-primary-600' : 'bg-gray-200'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                settings.pdfSupportEnabled ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-
-        <div className="p-3 bg-gray-50 rounded-md space-y-3">
-          <div className="font-medium text-gray-900">키보드 단축키</div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">빠른 조회 (Ctrl+클릭)</span>
-              <button
-                onClick={() => {
-                  setSettings((prev) => ({
-                    ...prev,
-                    keyboardSettings: {
-                      ...prev.keyboardSettings,
-                      quickLookup: {
-                        ...prev.keyboardSettings.quickLookup,
-                        enabled: !prev.keyboardSettings.quickLookup.enabled,
-                      },
-                    },
-                  }));
-                }}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  settings.keyboardSettings.quickLookup.enabled ? 'bg-primary-600' : 'bg-gray-200'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                    settings.keyboardSettings.quickLookup.enabled ? 'translate-x-5' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600">빠른 저장 (Alt+클릭)</span>
-              <button
-                onClick={() => {
-                  setSettings((prev) => ({
-                    ...prev,
-                    keyboardSettings: {
-                      ...prev.keyboardSettings,
-                      quickSave: {
-                        ...prev.keyboardSettings.quickSave,
-                        enabled: !prev.keyboardSettings.quickSave.enabled,
-                      },
-                    },
-                  }));
-                }}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  settings.keyboardSettings.quickSave.enabled ? 'bg-primary-600' : 'bg-gray-200'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                    settings.keyboardSettings.quickSave.enabled ? 'translate-x-5' : 'translate-x-1'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 전역 단축키 설정 (Phase 2-D) */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">⌨️ 전역 단축키</h3>
-
+        {/* 전역 단축키 */}
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
           <div className="text-sm text-blue-800 mb-3">
             <strong>전역 단축키</strong>는 어떤 웹페이지에서든 작동합니다.
@@ -892,6 +860,18 @@ export function SettingsTab() {
 
             <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
               <div>
+                <div className="font-medium text-gray-900">PDF 단어 조회</div>
+                <div className="text-sm text-gray-500">PDF에서 단어 자동 복사 + 조회</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Alt+C
+                </kbd>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
+              <div>
                 <div className="font-medium text-gray-900">팝업 열기</div>
                 <div className="text-sm text-gray-500">CatchVoca 팝업 열기</div>
               </div>
@@ -916,6 +896,69 @@ export function SettingsTab() {
             단축키는 Chrome 설정에서 변경할 수 있습니다
           </p>
         </div>
+
+        {/* 단어 읽기 모드 */}
+        <div className="p-4 bg-purple-50 border border-purple-200 rounded-md space-y-4">
+          <div>
+            <div className="text-sm font-semibold text-purple-900 mb-1">🖱️ 단어 읽기 모드</div>
+            <p className="text-sm text-purple-800">
+              웹페이지와 PDF에서 단어를 읽는 방법을 선택할 수 있습니다.
+            </p>
+          </div>
+
+          {/* 웹페이지 읽기 모드 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📄 웹페이지 단어 읽기
+            </label>
+            <select
+              value={settings.wordReadingMode.webpage}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  wordReadingMode: {
+                    ...settings.wordReadingMode,
+                    webpage: e.target.value as any,
+                  },
+                })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+            >
+              <option value="drag">마우스 드래그 (기본)</option>
+              <option value="ctrl-click">Ctrl + 클릭</option>
+              <option value="alt-click">Alt + 클릭</option>
+              <option value="ctrl-drag">Ctrl + 드래그</option>
+              <option value="alt-drag">Alt + 드래그</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              {settings.wordReadingMode.webpage === 'drag' && '단어를 드래그하여 선택'}
+              {settings.wordReadingMode.webpage === 'ctrl-click' && 'Ctrl 키를 누른 채 단어 클릭'}
+              {settings.wordReadingMode.webpage === 'alt-click' && 'Alt 키를 누른 채 단어 클릭하면 즉시 저장'}
+              {settings.wordReadingMode.webpage === 'ctrl-drag' && 'Ctrl 키를 누른 채 드래그'}
+              {settings.wordReadingMode.webpage === 'alt-drag' && 'Alt 키를 누른 채 드래그'}
+            </p>
+          </div>
+
+          {/* PDF 읽기 모드 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📑 PDF 단어 읽기
+            </label>
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+              <p className="text-sm font-medium text-gray-900 mb-2">
+                ⚡ 자동 복사 + 단축키 (고정)
+              </p>
+              <ol className="text-xs text-gray-700 space-y-1 list-decimal list-inside">
+                <li>PDF에서 단어를 <strong>드래그</strong>하여 선택</li>
+                <li><strong>Alt+C</strong>를 누르면 자동 복사 + 조회</li>
+                <li>팝업이 열리며 단어 뜻이 표시됩니다</li>
+              </ol>
+            </div>
+            <p className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+              ✨ 자동 복사 기능으로 Ctrl+C 단계가 생략됩니다!
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* 데이터 백업/복원 (Phase 2-D) */}
@@ -924,7 +967,7 @@ export function SettingsTab() {
 
         <div className="p-4 bg-green-50 border border-green-200 rounded-md">
           <p className="text-sm text-green-800 mb-4">
-            모든 단어와 복습 상태를 JSON 파일로 백업하고 복원할 수 있습니다.
+            단어장을 CSV 파일로 내보내거나, JSON 백업 파일을 복원할 수 있습니다.
           </p>
 
           <div className="space-y-3">
@@ -951,7 +994,7 @@ export function SettingsTab() {
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                 />
               </svg>
-              {isExporting ? '내보내는 중...' : '📥 데이터 내보내기'}
+              {isExporting ? '내보내는 중...' : '📥 단어장 내보내기 (CSV)'}
             </button>
 
             {/* 가져오기 */}
@@ -987,7 +1030,8 @@ export function SettingsTab() {
           </div>
 
           <p className="mt-3 text-xs text-gray-600">
-            💡 백업 파일은 JSON 형식으로 저장되며, 다른 기기로 이동하거나 복원할 수 있습니다.
+            💡 CSV: 학습용 데이터 (Excel, Google Sheets에서 열기 가능)<br/>
+            💡 JSON: 완전한 백업 (복습 상태 포함, 다른 기기로 복원 가능)
           </p>
         </div>
       </div>

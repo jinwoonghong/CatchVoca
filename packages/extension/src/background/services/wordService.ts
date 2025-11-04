@@ -3,7 +3,7 @@
  * 단어 저장 및 조회 로직
  */
 
-import { wordRepository, eventBus, Logger } from '@catchvoca/core';
+import { wordRepository, reviewStateRepository, eventBus, Logger, createInitialReviewState } from '@catchvoca/core';
 import type { WordEntryInput } from '@catchvoca/types';
 import { lookupWord } from './dictionaryAPI';
 
@@ -49,12 +49,29 @@ export async function saveWord(wordData: Partial<WordEntryInput>): Promise<strin
   // 3. Repository를 통해 저장
   const wordId = await wordRepository.create(wordEntryData);
 
-  // 4. EventBus를 통해 알림
+  // 4. ReviewState 자동 생성 (SM-2 복습 시스템)
+  try {
+    const initialReviewState = createInitialReviewState(wordId);
+    await reviewStateRepository.create({
+      wordId: initialReviewState.wordId,
+      nextReviewAt: initialReviewState.nextReviewAt,
+      interval: initialReviewState.interval,
+      easeFactor: initialReviewState.easeFactor,
+      repetitions: initialReviewState.repetitions,
+      history: [], // 초기 히스토리는 빈 배열
+    });
+    logger.info(`ReviewState created for word: ${wordId}`);
+  } catch (reviewError) {
+    // ReviewState 생성 실패해도 단어는 저장됨
+    logger.warn(`Failed to create ReviewState for ${wordId}`, reviewError);
+  }
+
+  // 5. EventBus를 통해 알림
   eventBus.emit('word:created', { id: wordId });
 
   logger.info(`Word saved: ${wordId}`);
 
-  // 5. 사용자 알림
+  // 6. 사용자 알림
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon48.png',

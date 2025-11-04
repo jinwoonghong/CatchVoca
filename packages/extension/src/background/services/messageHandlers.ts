@@ -156,11 +156,6 @@ export async function handleMessage(
         await handleImportAllData(message, sendResponse);
         break;
 
-      // 모바일 퀴즈 관련 핸들러
-      case 'GENERATE_MOBILE_QUIZ_LINK':
-        await handleGenerateMobileQuizLink(message, sendResponse);
-        break;
-
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }

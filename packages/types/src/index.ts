@@ -405,6 +405,12 @@ export interface Settings {
   // 편의 기능 설정 (Phase 2-C)
   pdfSupportEnabled: boolean; // PDF 지원 활성화
   keyboardSettings: KeyboardSettings; // 키보드 단축키 설정
+
+  // 단어 읽기 모드 설정
+  wordReadingMode: {
+    webpage: 'drag' | 'ctrl-drag' | 'alt-drag' | 'ctrl-click' | 'alt-click'; // 웹페이지 단어 읽기 모드
+    pdf: 'drag' | 'ctrl-drag' | 'alt-drag' | 'ctrl-click' | 'alt-click'; // PDF 단어 읽기 모드
+  };
 }
 
 /**
@@ -438,6 +444,10 @@ export const DEFAULT_SETTINGS: Settings = {
       key: 'alt',
       requiresClick: true,
     },
+  },
+  wordReadingMode: {
+    webpage: 'ctrl-click', // 기본: Ctrl + 클릭
+    pdf: 'ctrl-drag', // PDF는 Ctrl+드래그 (clipboard 기반)
   },
 };
 

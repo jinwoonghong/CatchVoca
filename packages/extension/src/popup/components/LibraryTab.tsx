@@ -29,6 +29,8 @@ export function LibraryTab() {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [mobileQuizUrl, setMobileQuizUrl] = useState<string | null>(null);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   // Debounced search query (300ms)
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -99,10 +101,8 @@ export function LibraryTab() {
   /**
    * 단어 삭제 핸들러
    */
-  const handleDelete = async (wordId: string) => {
-    if (!confirm('이 단어를 삭제하시겠습니까?')) {
-      return;
-    }
+  const handleDelete = async (wordId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
 
     try {
       const response = await chrome.runtime.sendMessage({
@@ -118,6 +118,91 @@ export function LibraryTab() {
     } catch (err) {
       setError('단어 삭제 중 오류가 발생했습니다.');
       console.error('[LibraryTab] Delete error:', err);
+    }
+  };
+
+  /**
+   * 단어 선택 토글
+   */
+  const toggleWordSelection = (wordId: string) => {
+    setSelectedWords((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(wordId)) {
+        newSet.delete(wordId);
+      } else {
+        newSet.add(wordId);
+      }
+      return newSet;
+    });
+  };
+
+  /**
+   * 전체 선택
+   */
+  const selectAll = () => {
+    const allIds = new Set(filteredWords.map((w) => w.id));
+    setSelectedWords(allIds);
+  };
+
+  /**
+   * 전체 해제
+   */
+  const clearSelection = () => {
+    setSelectedWords(new Set());
+  };
+
+  /**
+   * 선택 모드 토글
+   */
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    if (isSelectionMode) {
+      clearSelection();
+    }
+  };
+
+  /**
+   * 선택된 단어 일괄 삭제
+   */
+  const handleBulkDelete = async () => {
+    if (selectedWords.size === 0) return;
+
+    const wordCount = selectedWords.size;
+    const confirmed = confirm(`선택한 ${wordCount}개의 단어를 삭제하시겠습니까?`);
+    if (!confirmed) return;
+
+    try {
+      // 병렬로 삭제 요청
+      const deletePromises = Array.from(selectedWords).map((wordId) =>
+        chrome.runtime.sendMessage({
+          type: 'DELETE_WORD',
+          wordId,
+        })
+      );
+
+      const results = await Promise.all(deletePromises);
+
+      // 성공한 단어들만 필터링
+      const successfulDeletes = Array.from(selectedWords).filter(
+        (_, index) => results[index]?.success
+      );
+
+      if (successfulDeletes.length > 0) {
+        setWords((prev) => prev.filter((w) => !successfulDeletes.includes(w.id)));
+        alert(`${successfulDeletes.length}개의 단어가 삭제되었습니다.`);
+      }
+
+      // 실패한 항목이 있으면 오류 표시
+      const failedCount = wordCount - successfulDeletes.length;
+      if (failedCount > 0) {
+        setError(`${failedCount}개의 단어 삭제에 실패했습니다.`);
+      }
+
+      clearSelection();
+      setIsSelectionMode(false);
+    } catch (err) {
+      setError('일괄 삭제 중 오류가 발생했습니다.');
+      console.error('[LibraryTab] Bulk delete error:', err);
     }
   };
 
@@ -329,29 +414,78 @@ export function LibraryTab() {
 
   return (
     <div className="space-y-4">
-      {/* 검색 바 */}
-      <div className="relative">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="단어, 정의, 문맥 검색..."
-          className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-        />
-        <svg
-          className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+      {/* 검색 바 및 선택 모드 토글 */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="단어, 정의, 문맥 검색..."
+            className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
-        </svg>
+          <svg
+            className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+        </div>
+        {!isLoading && filteredWords.length > 0 && (
+          <button
+            onClick={toggleSelectionMode}
+            className={`px-4 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${
+              isSelectionMode
+                ? 'bg-primary-600 text-white hover:bg-primary-700'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {isSelectionMode ? '편집 취소' : '편집'}
+          </button>
+        )}
       </div>
+
+      {/* 선택 모드 활성화 시 일괄 작업 바 */}
+      {isSelectionMode && (
+        <div className="flex items-center justify-between gap-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-700">
+              {selectedWords.size}개 선택됨
+            </span>
+            {selectedWords.size < filteredWords.length && (
+              <button
+                onClick={selectAll}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+              >
+                전체 선택
+              </button>
+            )}
+            {selectedWords.size > 0 && (
+              <button
+                onClick={clearSelection}
+                className="text-sm text-gray-600 hover:text-gray-700"
+              >
+                선택 해제
+              </button>
+            )}
+          </div>
+          {selectedWords.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium text-sm"
+            >
+              🗑️ 삭제 ({selectedWords.size})
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 필터 섹션 */}
       <div className="space-y-2">
@@ -513,11 +647,28 @@ export function LibraryTab() {
           {filteredWords.map((word) => (
             <div
               key={word.id}
-              className="border border-gray-200 rounded-md p-3 hover:bg-gray-50 transition-colors"
+              className={`border rounded-md p-3 transition-colors ${
+                isSelectionMode && selectedWords.has(word.id)
+                  ? 'border-primary-500 bg-primary-50'
+                  : 'border-gray-200 hover:bg-gray-50'
+              }`}
             >
               {/* 단어 헤더 */}
-              <div className="flex items-start justify-between">
-                <div className="flex-1 cursor-pointer" onClick={() => toggleExpand(word.id)}>
+              <div className="flex items-start justify-between gap-2">
+                {/* 선택 모드 체크박스 */}
+                {isSelectionMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedWords.has(word.id)}
+                    onChange={() => toggleWordSelection(word.id)}
+                    className="mt-1 w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500 cursor-pointer flex-shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                )}
+                <div
+                  className="flex-1 cursor-pointer"
+                  onClick={() => !isSelectionMode && toggleExpand(word.id)}
+                >
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-lg font-semibold text-gray-900">{word.word}</h3>
                     {word.phonetic && (
@@ -583,40 +734,42 @@ export function LibraryTab() {
                   </p>
                 </div>
 
-                {/* 즐겨찾기, 수정, 삭제 버튼 */}
-                <div className="flex gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleFavorite(word.id, word.isFavorite);
-                    }}
-                    className={`px-2 py-1 rounded text-sm transition-colors ${
-                      word.isFavorite
-                        ? 'text-yellow-600 hover:bg-yellow-50'
-                        : 'text-gray-400 hover:bg-gray-100 hover:text-yellow-600'
-                    }`}
-                    title={word.isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-                  >
-                    {word.isFavorite ? '⭐' : '☆'}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStartEdit(word);
-                    }}
-                    className="px-2 py-1 text-blue-600 hover:bg-blue-50 rounded text-sm"
-                    title="수정"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleDelete(word.id)}
-                    className="px-2 py-1 text-red-600 hover:bg-red-50 rounded text-sm"
-                    title="삭제"
-                  >
-                    🗑️
-                  </button>
-                </div>
+                {/* 즐겨찾기, 수정, 삭제 버튼 (선택 모드가 아닐 때만 표시) */}
+                {!isSelectionMode && (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleFavorite(word.id, word.isFavorite);
+                      }}
+                      className={`px-2 py-1 rounded text-sm transition-colors ${
+                        word.isFavorite
+                          ? 'text-yellow-600 hover:bg-yellow-50'
+                          : 'text-gray-400 hover:bg-gray-100 hover:text-yellow-600'
+                      }`}
+                      title={word.isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                    >
+                      {word.isFavorite ? '⭐' : '☆'}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartEdit(word);
+                      }}
+                      className="px-2 py-1 text-blue-600 hover:bg-blue-50 rounded text-sm"
+                      title="수정"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(word.id, e)}
+                      className="px-2 py-1 text-red-600 hover:bg-red-50 rounded text-sm transition-colors"
+                      title="클릭하여 즉시 삭제"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* 확장된 내용 */}

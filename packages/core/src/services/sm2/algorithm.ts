@@ -57,7 +57,8 @@ export function createInitialReviewState(
   config: SM2Config = DEFAULT_SM2_CONFIG
 ): Omit<ReviewState, 'id' | 'history'> {
   const now = Date.now();
-  const nextReviewAt = now + config.firstInterval * 24 * 60 * 60 * 1000;
+  // 저장 즉시 복습 가능하도록 nextReviewAt을 현재 시각으로 설정
+  const nextReviewAt = now;
 
   return {
     wordId,
