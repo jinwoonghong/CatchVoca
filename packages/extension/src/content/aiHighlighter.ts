@@ -21,6 +21,10 @@ let highlightSettings: HighlightSettings = {
   showTooltip: true,
 };
 
+// 학습 단어 하이라이트 토글 키 설정
+let toggleLearnedHighlightKey: string = 'Shift'; // 기본값
+let isToggleKeyPressed: boolean = false; // 토글 키 눌림 상태
+
 // 학습 완료 단어 목록 (normalizedWord -> WordEntry 정보)
 interface LearnedWordInfo {
   normalizedWord: string;
@@ -69,6 +73,9 @@ export function initializeAIHighlighter(): void {
 
   // 추천 단어 로드 (최근 AI 분석 결과)
   loadRecommendedWords();
+
+  // 키보드 이벤트 리스너 등록
+  setupKeyboardListeners();
 
   // DOM 변경 감지 (동적 콘텐츠 지원)
   setupMutationObserver();
@@ -341,10 +348,164 @@ async function loadHighlightSettings(): Promise<void> {
     if (response.success && response.data.highlightSettings) {
       highlightSettings = response.data.highlightSettings;
       isHighlightEnabled = response.data.aiAnalysisEnabled;
+
+      // 토글 키 설정 로드
+      if (response.data.keyboardSettings?.toggleLearnedHighlight) {
+        toggleLearnedHighlightKey = response.data.keyboardSettings.toggleLearnedHighlight;
+        console.log('[AIHighlighter] Loaded toggle key:', toggleLearnedHighlightKey);
+      }
     }
   } catch (error) {
     console.error('[AIHighlighter] Failed to load settings:', error);
   }
+}
+
+/**
+ * 키보드 이벤트 리스너 설정
+ */
+function setupKeyboardListeners(): void {
+  // keydown: 토글 키가 눌렸을 때
+  document.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key === toggleLearnedHighlightKey && !isToggleKeyPressed) {
+      isToggleKeyPressed = true;
+      console.log('[AIHighlighter] Toggle key pressed, showing learned words');
+
+      // 학습 단어 하이라이트 표시 (추천 단어는 건드리지 않음)
+      if (learnedWords.size > 0 && isHighlightEnabled && highlightSettings.enabled) {
+        addLearnedWordHighlights();
+      }
+    }
+  });
+
+  // keyup: 토글 키가 떼졌을 때
+  document.addEventListener('keyup', (event: KeyboardEvent) => {
+    if (event.key === toggleLearnedHighlightKey && isToggleKeyPressed) {
+      isToggleKeyPressed = false;
+      console.log('[AIHighlighter] Toggle key released, hiding learned words');
+
+      // 학습 단어 하이라이트만 제거
+      removeLearnedWordHighlights();
+    }
+  });
+
+  // blur: 탭이 비활성화되었을 때도 키 상태 초기화
+  window.addEventListener('blur', () => {
+    if (isToggleKeyPressed) {
+      isToggleKeyPressed = false;
+      console.log('[AIHighlighter] Window blurred, resetting toggle key state');
+
+      // 학습 단어 하이라이트 제거
+      removeLearnedWordHighlights();
+    }
+  });
+
+  console.log('[AIHighlighter] Keyboard listeners registered');
+}
+
+/**
+ * 학습 단어 하이라이트만 추가 (추천 단어는 건드리지 않음)
+ */
+function addLearnedWordHighlights(): void {
+  console.log('[AIHighlighter] Adding learned word highlights only');
+
+  // 이미 하이라이트된 모든 요소를 찾아서 Set에 저장
+  const highlightedElements = new Set<Element>();
+  document.querySelectorAll(`.${LEARNED_CLASS}, .${RECOMMENDED_CLASS}`).forEach(el => {
+    highlightedElements.add(el);
+  });
+
+  console.log('[AIHighlighter] Found existing highlights:', highlightedElements.size);
+
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: (node) => {
+        // 부모 요소가 이미 하이라이트된 요소인지 확인
+        let element = node.parentElement;
+        while (element && element !== document.body) {
+          // 이미 하이라이트된 요소 내부면 제외
+          if (highlightedElements.has(element)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          // 제외할 태그들
+          const tagName = element.tagName.toLowerCase();
+          if (['script', 'style', 'noscript', 'iframe', 'svg'].includes(tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          element = element.parentElement;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    }
+  );
+
+  const textNodes: Text[] = [];
+  let currentNode: Node | null;
+  while ((currentNode = walker.nextNode())) {
+    textNodes.push(currentNode as Text);
+  }
+
+  console.log('[AIHighlighter] Found text nodes to process:', textNodes.length);
+
+  let highlightCount = 0;
+  const processedWords = new Set<string>();
+
+  for (const node of textNodes) {
+    const text = node.textContent || '';
+    const words = text.match(/\b[a-zA-Z]+\b/g);
+    if (!words) continue;
+
+    // 학습 단어가 있는지 확인 (추천 단어는 제외)
+    const learnedWordsInText = words.filter(word => {
+      const normalized = word.toLowerCase();
+      const isLearned = learnedWords.has(normalized);
+      const isRecommended = recommendedWords.has(normalized);
+
+      if (isLearned && isRecommended) {
+        console.warn('[AIHighlighter] Word is both learned and recommended:', word);
+      }
+
+      return isLearned && !isRecommended;
+    });
+
+    if (learnedWordsInText.length === 0) continue;
+
+    // HTML 생성
+    let newHTML = text;
+    for (const word of learnedWordsInText) {
+      const regex = new RegExp(`\\b${word}\\b`, 'g');
+      newHTML = newHTML.replace(regex, `<span class="${LEARNED_CLASS}">${word}</span>`);
+      highlightCount++;
+      processedWords.add(word.toLowerCase());
+    }
+
+    // DOM 업데이트
+    const wrapper = document.createElement('span');
+    wrapper.innerHTML = newHTML;
+
+    const parent = node.parentElement;
+    if (parent) {
+      parent.replaceChild(wrapper, node);
+    }
+  }
+
+  console.log('[AIHighlighter] Added learned word highlights:', highlightCount);
+  console.log('[AIHighlighter] Processed unique words:', Array.from(processedWords));
+}
+
+/**
+ * 학습 단어 하이라이트만 제거
+ */
+function removeLearnedWordHighlights(): void {
+  document.querySelectorAll(`.${LEARNED_CLASS}`).forEach((el) => {
+    const parent = el.parentElement;
+    if (parent) {
+      const textNode = document.createTextNode(el.textContent || '');
+      parent.replaceChild(textNode, el);
+      parent.normalize();
+    }
+  });
 }
 
 /**
@@ -555,9 +716,11 @@ function highlightTextNodes(node: Node): void {
       for (const word of words) {
         const normalized = word.toLowerCase();
 
-        if (learnedWords.has(normalized)) {
+        // 학습 단어는 토글 키가 눌렸을 때만 하이라이트
+        if (learnedWords.has(normalized) && isToggleKeyPressed) {
           replacements.push({ word, type: 'learned' });
         } else if (recommendedWords.has(normalized)) {
+          // 추천 단어는 항상 하이라이트
           replacements.push({
             word,
             type: 'recommended',

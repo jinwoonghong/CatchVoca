@@ -523,7 +523,12 @@ async function handleAnalyzePageAI(
     }
 
     // Gemini API 호출
-    const request: GeminiAnalysisRequest = message.data;
+    const request: GeminiAnalysisRequest = {
+      pageContent: message.pageContent,
+      pageUrl: message.pageUrl,
+      pageTitle: message.pageTitle,
+      userWords: message.userWords || [],
+    };
     const result = await analyzePageWithGemini(request);
 
     // 사용량 증가

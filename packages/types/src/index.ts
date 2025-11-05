@@ -272,6 +272,7 @@ export interface KeyboardShortcut {
 export interface KeyboardSettings {
   quickLookup: KeyboardShortcut; // Ctrl/Alt + 클릭으로 즉시 조회
   quickSave: KeyboardShortcut; // Ctrl/Alt + 클릭으로 즉시 저장
+  toggleLearnedHighlight: string; // 학습 단어 하이라이트 토글 (예: 'Shift', 'Alt', 'Control')
 }
 
 // ============================================================================
@@ -475,6 +476,7 @@ export const DEFAULT_SETTINGS: Settings = {
       key: 'alt',
       requiresClick: true,
     },
+    toggleLearnedHighlight: 'Shift', // 기본: Shift 키
   },
   wordReadingMode: {
     webpage: 'ctrl-click', // 기본: Ctrl + 클릭

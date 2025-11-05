@@ -207,6 +207,15 @@ export function LibraryTab() {
   };
 
   /**
+   * HTML 태그 제거 함수
+   */
+  const stripHtml = (text: string): string => {
+    const temp = document.createElement('div');
+    temp.innerHTML = text;
+    return temp.textContent || temp.innerText || '';
+  };
+
+  /**
    * 발음 재생 핸들러
    */
   const handlePlayAudio = (audioUrl: string) => {
@@ -672,7 +681,7 @@ export function LibraryTab() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-lg font-semibold text-gray-900">{word.word}</h3>
                     {word.phonetic && (
-                      <span className="text-sm text-gray-600">{word.phonetic}</span>
+                      <span className="text-sm text-gray-600">[{stripHtml(word.phonetic)}]</span>
                     )}
                     {word.audioUrl && (
                       <button
@@ -680,58 +689,13 @@ export function LibraryTab() {
                           e.stopPropagation();
                           handlePlayAudio(word.audioUrl!);
                         }}
-                        className="text-xs px-2 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600"
+                        className="text-primary-600 hover:text-primary-700 transition-colors"
                         title="발음 듣기"
                       >
                         🔊
                       </button>
                     )}
-                    {/* 조회수 표시 */}
-                    {word.viewCount !== undefined && word.viewCount > 0 && (
-                      <span
-                        className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded flex items-center gap-1"
-                        title={`${word.viewCount}번 조회`}
-                      >
-                        👁️ {word.viewCount}
-                      </span>
-                    )}
-                    {/* 즐겨찾기 표시 */}
-                    {word.isFavorite && (
-                      <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded" title="즐겨찾기">
-                        ⭐
-                      </span>
-                    )}
                   </div>
-
-                  {/* 태그 배지 */}
-                  {word.tags && word.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {word.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="text-xs px-2 py-0.5 bg-primary-50 text-primary-700 rounded-full border border-primary-200"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 첫 번째 정의 미리보기 */}
-                  {word.definitions && word.definitions.length > 0 && (
-                    <p className="text-sm text-gray-600 mt-1 line-clamp-1">
-                      {word.definitions[0]}
-                    </p>
-                  )}
-
-                  {/* 저장 날짜 */}
-                  <p className="text-xs text-gray-400 mt-1">
-                    {new Date(word.createdAt).toLocaleDateString('ko-KR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </p>
                 </div>
 
                 {/* 즐겨찾기, 수정, 삭제 버튼 (선택 모드가 아닐 때만 표시) */}
@@ -774,46 +738,105 @@ export function LibraryTab() {
 
               {/* 확장된 내용 */}
               {expandedWordId === word.id && (
-                <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+                <div className="mt-3 pt-3 border-t border-gray-200 space-y-3">
                   {/* 모든 정의 */}
                   {word.definitions && word.definitions.length > 0 && (
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-700 mb-1">정의</h4>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">📖 정의</h4>
                       <ol className="list-decimal list-inside space-y-1">
                         {word.definitions.map((definition, index) => (
                           <li key={index} className="text-sm text-gray-600 pl-2">
-                            {definition}
+                            {stripHtml(definition)}
                           </li>
                         ))}
                       </ol>
                     </div>
                   )}
 
-                  {/* 문맥 */}
-                  {word.context && word.context !== word.word && (
+                  {/* 조회수 */}
+                  {word.viewCount !== undefined && word.viewCount > 0 && (
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-700 mb-1">문맥</h4>
-                      <p className="text-sm text-gray-600 italic">"{word.context}"</p>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">👁️ 조회수</h4>
+                      <p className="text-sm text-gray-600">{word.viewCount}번</p>
                     </div>
                   )}
 
-                  {/* 출처 */}
-                  {word.sourceTitle && (
+                  {/* 즐겨찾기 */}
+                  {word.isFavorite && (
                     <div>
-                      <h4 className="text-sm font-semibold text-gray-700 mb-1">출처</h4>
-                      <p className="text-sm text-gray-600">{word.sourceTitle}</p>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">⭐ 즐겨찾기</h4>
+                      <p className="text-sm text-gray-600">즐겨찾기에 추가됨</p>
+                    </div>
+                  )}
+
+                  {/* 태그 */}
+                  {word.tags && word.tags.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">🏷️ 태그</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {word.tags.map((tag, index) => (
+                          <span
+                            key={index}
+                            className="text-xs px-2 py-0.5 bg-primary-50 text-primary-700 rounded-full border border-primary-200"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 문맥 */}
+                  {word.context && word.context !== word.word && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">💬 문맥</h4>
+                      <p className="text-sm text-gray-600 italic bg-gray-50 p-2 rounded">
+                        "{stripHtml(word.context)}"
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 메모 */}
+                  {word.note && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">📝 메모</h4>
+                      <p className="text-sm text-gray-600 bg-yellow-50 p-2 rounded">
+                        {stripHtml(word.note)}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 출처 (CatchVoca 팝업에서 검색한 경우 제외) */}
+                  {word.sourceTitle && word.sourceTitle !== 'CatchVoca' && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">🔗 출처</h4>
+                      <p className="text-sm text-gray-600">{stripHtml(word.sourceTitle)}</p>
                       {word.url && (
                         <a
                           href={word.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-blue-600 hover:underline"
+                          className="text-xs text-blue-600 hover:underline break-all"
                         >
                           {word.url}
                         </a>
                       )}
                     </div>
                   )}
+
+                  {/* 저장 날짜 */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-2">📅 저장 날짜</h4>
+                    <p className="text-sm text-gray-600">
+                      {new Date(word.createdAt).toLocaleDateString('ko-KR', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

@@ -223,6 +223,35 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     })();
     return true; // Keep channel open for async response
   }
+  // AI 페이지 분석을 위한 텍스트 추출
+  else if (message.type === 'EXTRACT_PAGE_TEXT') {
+    try {
+      // 페이지 본문 텍스트 추출
+      const bodyText = document.body.innerText || document.body.textContent || '';
+
+      // 텍스트 정리 (불필요한 공백 제거)
+      const cleanText = bodyText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .join('\n');
+
+      console.log('[CatchVoca] Extracted page text length:', cleanText.length);
+
+      sendResponse({
+        success: true,
+        data: {
+          text: cleanText,
+          url: window.location.href,
+          title: document.title
+        }
+      });
+    } catch (error) {
+      console.error('[CatchVoca] Failed to extract page text:', error);
+      sendResponse({ success: false, error: String(error) });
+    }
+    return true; // Keep channel open for async response
+  }
   return true;
 });
 

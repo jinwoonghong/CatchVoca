@@ -602,6 +602,37 @@ export function SettingsTab() {
         </div>
       </div>
 
+      {/* 키보드 단축키 설정 */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900">⌨️ 키보드 단축키</h3>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            학습 단어 하이라이트 토글 키
+          </label>
+          <select
+            value={settings.keyboardSettings.toggleLearnedHighlight}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                keyboardSettings: {
+                  ...settings.keyboardSettings,
+                  toggleLearnedHighlight: e.target.value,
+                },
+              })
+            }
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="Shift">Shift</option>
+            <option value="Alt">Alt</option>
+            <option value="Control">Ctrl</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            선택한 키를 누르고 있는 동안만 학습 단어가 하이라이트됩니다 (녹색)
+          </p>
+        </div>
+      </div>
+
       {/* 모바일 퀴즈 */}
       <div className="space-y-3">
         <h3 className="text-lg font-semibold text-gray-900">📱 모바일 퀴즈</h3>

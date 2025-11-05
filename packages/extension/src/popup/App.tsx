@@ -3,8 +3,9 @@ import { CollectTab } from './components/CollectTab';
 import { QuizTab } from './components/QuizTab';
 import { LibraryTab } from './components/LibraryTab';
 import { SettingsTab } from './components/SettingsTab';
+import { AIAnalysisTab } from './components/AIAnalysisTab';
 
-type Tab = 'collect' | 'review' | 'library' | 'settings';
+type Tab = 'collect' | 'ai' | 'review' | 'library' | 'settings';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('collect');
@@ -18,6 +19,8 @@ function App() {
         setActiveTab('review');
       } else if (message.type === 'SWITCH_TO_SETTINGS') {
         setActiveTab('settings');
+      } else if (message.type === 'SWITCH_TO_AI') {
+        setActiveTab('ai');
       }
     };
 
@@ -46,6 +49,12 @@ function App() {
             🔍 검색
           </TabButton>
           <TabButton
+            active={activeTab === 'ai'}
+            onClick={() => setActiveTab('ai')}
+          >
+            🤖 AI분석
+          </TabButton>
+          <TabButton
             active={activeTab === 'review'}
             onClick={() => setActiveTab('review')}
           >
@@ -69,6 +78,7 @@ function App() {
       {/* Content */}
       <main className="p-4">
         {activeTab === 'collect' && <CollectTab onSwitchToSettings={() => setActiveTab('settings')} />}
+        {activeTab === 'ai' && <AIAnalysisTab onSwitchToSettings={() => setActiveTab('settings')} />}
         {activeTab === 'review' && <QuizTab />}
         {activeTab === 'library' && <LibraryTab />}
         {activeTab === 'settings' && <SettingsTab />}
@@ -86,7 +96,7 @@ interface TabButtonProps {
 function TabButton({ active, onClick, children }: TabButtonProps) {
   return (
     <button
-      className={`flex-1 py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+      className={`flex-1 py-3 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
         active
           ? 'border-primary-600 text-primary-600'
           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'

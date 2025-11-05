@@ -244,9 +244,14 @@ async function getAIUsageLimitDisabled(): Promise<boolean> {
   try {
     const result = await chrome.storage.local.get('settings');
     const settings = result.settings;
-    return settings?.disableAIUsageLimit === true;
+    // 개발 단계에서는 기본적으로 제한 해제 (정식 배포 전)
+    // 설정 값이 명시적으로 false가 아닌 이상 true 반환
+    if (settings?.disableAIUsageLimit !== undefined) {
+      return settings.disableAIUsageLimit === true;
+    }
+    return true; // 기본값: 제한 해제
   } catch (error) {
     logger.error('Failed to get AI usage limit setting', error);
-    return false;
+    return true; // 에러 시에도 제한 해제 (개발 단계)
   }
 }

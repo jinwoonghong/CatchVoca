@@ -17,6 +17,7 @@ let keyboardSettings: KeyboardSettings = {
     key: 'alt',
     requiresClick: true,
   },
+  toggleLearnedHighlight: 'Shift', // 기본: Shift 키
 };
 
 /**

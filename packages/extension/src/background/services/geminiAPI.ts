@@ -131,15 +131,24 @@ export async function analyzePageWithGemini(
       if (!response.ok) {
         // 에러 응답 본문 읽기
         let errorBody = '';
+        let errorMessage = '';
         try {
           errorBody = await response.text();
           logger.error('Gemini API error response body', { body: errorBody });
+
+          // 429 에러 (속도 제한) 특별 처리
+          if (response.status === 429) {
+            errorMessage = 'API 속도 제한에 도달했습니다. 잠시 후 다시 시도해주세요.';
+          } else {
+            errorMessage = `Gemini API 오류 (${response.status}): ${response.statusText}`;
+          }
         } catch (e) {
           logger.error('Failed to read error response body', e);
+          errorMessage = `Gemini API returned ${response.status}: ${response.statusText}`;
         }
 
         throw new NetworkError(
-          `Gemini API returned ${response.status}: ${response.statusText}. ${errorBody}`,
+          errorMessage,
           response.status,
           GEMINI_API_URL
         );
@@ -148,7 +157,12 @@ export async function analyzePageWithGemini(
       const data = await response.json();
       return parseGeminiResponse(data);
     },
-    { maxAttempts: 2, initialDelay: 1000 }
+    {
+      maxAttempts: 3, // 429 에러 대비 재시도 횟수 증가
+      initialDelay: 2000, // 초기 지연 시간 증가 (2초)
+      backoffMultiplier: 2, // 지수 백오프 배수
+      maxDelay: 10000 // 최대 지연 시간 (10초)
+    }
   );
 }
 
