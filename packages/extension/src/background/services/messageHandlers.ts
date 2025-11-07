@@ -3,16 +3,30 @@
  * Chrome runtime message 핸들러
  */
 
+import type { CheckVocaDB } from '@catchvoca/core';
 import {
-  wordRepository,
-  reviewStateRepository,
+  createWordRepository,
+  createReviewStateRepository,
   AIAnalysisHistoryRepository,
   eventBus,
-  db,
   calculateNextReview,
   validateSnapshotDetailed,
-  Logger,
 } from '@catchvoca/core';
+import { getDbInstance } from '../dbInstance';
+
+// Lazy initialization
+let db: CheckVocaDB | null = null;
+let wordRepository: ReturnType<typeof createWordRepository> | null = null;
+let reviewStateRepository: ReturnType<typeof createReviewStateRepository> | null = null;
+
+async function ensureRepositories() {
+  if (!db) {
+    db = await getDbInstance();
+    wordRepository = createWordRepository(db);
+    reviewStateRepository = createReviewStateRepository(db);
+  }
+  // After this call, repositories are guaranteed to be non-null
+}
 import type { Rating, Snapshot, GeminiAnalysisRequest } from '@catchvoca/types';
 import { lookupWord } from './dictionaryAPI';
 import { saveWord, getWordInfo, incrementWordViewCount } from './wordService';
@@ -23,7 +37,13 @@ import { canUseAI, incrementAIUsage, getAIUsageStats } from './aiUsageManager';
 import { uploadQuizToFirebase } from './firebaseQuizService';
 import { exportAllData, importAllData } from './backupService';
 
-const logger = new Logger('MessageHandler');
+// 간단한 로거 (background service worker용)
+const log = {
+  info: (msg: string, data?: any) => console.log(`[MessageHandler] ${msg}`, data || ''),
+  error: (msg: string, error?: any) => console.error(`[MessageHandler] ${msg}`, error || ''),
+  warn: (msg: string, data?: any) => console.warn(`[MessageHandler] ${msg}`, data || ''),
+  debug: (msg: string, data?: any) => console.debug(`[MessageHandler] ${msg}`, data || ''),
+};
 
 type MessageResponse = {
   success: boolean;
@@ -152,6 +172,22 @@ export async function handleMessage(
         break;
 
       // 모바일 퀴즈 관련 핸들러 (Week 5-6)
+      case 'GOOGLE_SIGN_IN':
+        await handleGoogleSignIn(sendResponse);
+        break;
+
+      case 'GOOGLE_SIGN_OUT':
+        await handleGoogleSignOut(sendResponse);
+        break;
+
+      case 'GET_CURRENT_USER':
+        await handleGetCurrentUser(sendResponse);
+        break;
+
+      case 'SYNC_FROM_MOBILE':
+        await handleSyncFromMobile(message, sendResponse);
+        break;
+
       case 'GENERATE_MOBILE_QUIZ_LINK':
         await handleGenerateMobileQuizLink(message, sendResponse);
         break;
@@ -169,7 +205,7 @@ export async function handleMessage(
         sendResponse({ success: false, error: 'Unknown message type' });
     }
   } catch (error) {
-    logger.error('Message handler error', error);
+    log.error('Message handler error', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -198,17 +234,20 @@ async function handleSaveWord(message: any, sendResponse: (response: MessageResp
 }
 
 async function handleGetAllWords(sendResponse: (response: MessageResponse) => void) {
-  const words = await wordRepository.findAll();
+  await ensureRepositories();
+  const words = await wordRepository!.findAll();
   sendResponse({ success: true, data: words });
 }
 
 async function handleDeleteWord(message: any, sendResponse: (response: MessageResponse) => void) {
-  await wordRepository.delete(message.wordId);
+  await ensureRepositories();
+  await wordRepository!.delete(message.wordId);
   sendResponse({ success: true });
 }
 
 async function handleUpdateWord(message: any, sendResponse: (response: MessageResponse) => void) {
-  await wordRepository.update(message.wordId, message.changes);
+  await ensureRepositories();
+  await wordRepository!.update(message.wordId, message.changes);
   sendResponse({ success: true });
 }
 
@@ -218,13 +257,15 @@ async function handleIncrementViewCount(message: any, sendResponse: (response: M
 }
 
 async function handleGetReviewStats(sendResponse: (response: MessageResponse) => void) {
-  const stats = await reviewStateRepository.getReviewStats();
+  await ensureRepositories();
+  const stats = await reviewStateRepository!.getReviewStats();
   sendResponse({ success: true, data: stats });
 }
 
 async function handleGetReviewState(message: any, sendResponse: (response: MessageResponse) => void) {
   try {
-    const reviewState = await reviewStateRepository.findByWordId(message.wordId);
+    await ensureRepositories();
+    const reviewState = await reviewStateRepository!.findByWordId(message.wordId);
     sendResponse({ success: true, data: reviewState });
   } catch (error) {
     sendResponse({ success: false, error: 'Failed to get review state' });
@@ -232,22 +273,24 @@ async function handleGetReviewState(message: any, sendResponse: (response: Messa
 }
 
 async function handleGetDueReviews(message: any, sendResponse: (response: MessageResponse) => void) {
-  const dueReviews = await reviewStateRepository.findDueReviews(message.limit || 20);
+  await ensureRepositories();
+  const dueReviews = await reviewStateRepository!.findDueReviews(message.limit || 20);
   const dueWords = await Promise.all(
-    dueReviews.map((review) => wordRepository.findById(review.wordId))
+    dueReviews.map((review) => wordRepository!.findById(review.wordId))
   );
   sendResponse({ success: true, data: dueWords.filter((w) => w !== null) });
 }
 
 async function handleStartReviewSession(message: any, sendResponse: (response: MessageResponse) => void) {
+  await ensureRepositories();
   const sessionLimit = message.limit || 20;
-  const sessionDueReviews = await reviewStateRepository.findDueReviews(sessionLimit);
+  const sessionDueReviews = await reviewStateRepository!.findDueReviews(sessionLimit);
   const sessionWords = await Promise.all(
-    sessionDueReviews.map((review) => wordRepository.findById(review.wordId))
+    sessionDueReviews.map((review) => wordRepository!.findById(review.wordId))
   );
   const validSessionWords = sessionWords.filter((w) => w !== null);
 
-  logger.info('Review session started', {
+  log.info('Review session started', {
     totalDue: sessionDueReviews.length,
     sessionSize: validSessionWords.length,
     limit: sessionLimit,
@@ -257,7 +300,8 @@ async function handleStartReviewSession(message: any, sendResponse: (response: M
 }
 
 async function handleSubmitReview(message: any, sendResponse: (response: MessageResponse) => void) {
-  const reviewState = await reviewStateRepository.findByWordId(message.wordId);
+  await ensureRepositories();
+  const reviewState = await reviewStateRepository!.findByWordId(message.wordId);
   if (reviewState) {
     const rating: Rating = message.rating;
 
@@ -270,7 +314,7 @@ async function handleSubmitReview(message: any, sendResponse: (response: Message
       rating
     );
 
-    await reviewStateRepository.recordReview(
+    await reviewStateRepository!.recordReview(
       message.wordId,
       rating,
       sm2Result.nextReviewAt,
@@ -279,7 +323,7 @@ async function handleSubmitReview(message: any, sendResponse: (response: Message
       sm2Result.repetitions
     );
 
-    logger.info('SM-2 review recorded', {
+    log.info('SM-2 review recorded', {
       wordId: message.wordId,
       rating,
       interval: sm2Result.interval,
@@ -299,7 +343,8 @@ async function handleUpdateSettings(message: any, sendResponse: (response: Messa
 }
 
 async function handleGetStorageInfo(sendResponse: (response: MessageResponse) => void) {
-  const allWords = await wordRepository.findAll();
+  await ensureRepositories();
+  const allWords = await wordRepository!.findAll();
   sendResponse({
     success: true,
     data: {
@@ -310,8 +355,9 @@ async function handleGetStorageInfo(sendResponse: (response: MessageResponse) =>
 }
 
 async function handleExportData(sendResponse: (response: MessageResponse) => void) {
-  const exportWords = await wordRepository.findAll();
-  const exportReviews = await reviewStateRepository.findAll();
+  await ensureRepositories();
+  const exportWords = await wordRepository!.findAll();
+  const exportReviews = await reviewStateRepository!.findAll();
   sendResponse({
     success: true,
     data: {
@@ -332,7 +378,7 @@ async function handleImportData(message: any, sendResponse: (response: MessageRe
       snapshot = message.data;
     }
   } catch (parseError) {
-    logger.error('JSON parse error', parseError);
+    log.error('JSON parse error', parseError);
     sendResponse({
       success: false,
       error: 'Invalid JSON format',
@@ -343,7 +389,7 @@ async function handleImportData(message: any, sendResponse: (response: MessageRe
   // Snapshot 구조 검증
   const validationErrors = validateSnapshotDetailed(snapshot);
   if (validationErrors.length > 0) {
-    logger.error('Validation errors', validationErrors);
+    log.error('Validation errors', validationErrors);
     sendResponse({
       success: false,
       error: 'Invalid data format',
@@ -358,14 +404,16 @@ async function handleImportData(message: any, sendResponse: (response: MessageRe
   let skippedWords = 0;
   let skippedReviews = 0;
 
+  await ensureRepositories();
+
   // WordEntry 가져오기
   for (const wordEntry of snapshot.wordEntries) {
     try {
-      const existing = await wordRepository.findById(wordEntry.id);
+      const existing = await wordRepository!.findById(wordEntry.id);
 
       if (existing) {
         if (wordEntry.updatedAt > existing.updatedAt) {
-          await db.wordEntries.put({
+          await db!.wordEntries.put({
             ...wordEntry,
             updatedAt: Date.now(),
           });
@@ -374,11 +422,11 @@ async function handleImportData(message: any, sendResponse: (response: MessageRe
           skippedWords++;
         }
       } else {
-        await db.wordEntries.add(wordEntry);
+        await db!.wordEntries.add(wordEntry);
         importedWords++;
       }
     } catch (error) {
-      logger.error(`Failed to import word: ${wordEntry.id}`, error);
+      log.error(`Failed to import word: ${wordEntry.id}`, error);
       skippedWords++;
     }
   }
@@ -386,21 +434,21 @@ async function handleImportData(message: any, sendResponse: (response: MessageRe
   // ReviewState 가져오기
   for (const reviewState of snapshot.reviewStates) {
     try {
-      const existing = await reviewStateRepository.findById(reviewState.id);
+      const existing = await reviewStateRepository!.findById(reviewState.id);
 
       if (existing) {
         if (reviewState.history.length > existing.history.length) {
-          await db.reviewStates.put(reviewState);
+          await db!.reviewStates.put(reviewState);
           importedReviews++;
         } else {
           skippedReviews++;
         }
       } else {
-        await db.reviewStates.add(reviewState);
+        await db!.reviewStates.add(reviewState);
         importedReviews++;
       }
     } catch (error) {
-      logger.error(`Failed to import review state: ${reviewState.id}`, error);
+      log.error(`Failed to import review state: ${reviewState.id}`, error);
       skippedReviews++;
     }
   }
@@ -421,10 +469,11 @@ async function handleImportData(message: any, sendResponse: (response: MessageRe
 }
 
 async function handleClearAllData(sendResponse: (response: MessageResponse) => void) {
-  const allWordsToDelete = await wordRepository.findAll();
-  await Promise.all(allWordsToDelete.map((w) => wordRepository.delete(w.id)));
-  const allReviewsToDelete = await reviewStateRepository.findAll();
-  await Promise.all(allReviewsToDelete.map((r) => reviewStateRepository.delete(r.id)));
+  await ensureRepositories();
+  const allWordsToDelete = await wordRepository!.findAll();
+  await Promise.all(allWordsToDelete.map((w) => wordRepository!.delete(w.id)));
+  const allReviewsToDelete = await reviewStateRepository!.findAll();
+  await Promise.all(allReviewsToDelete.map((r) => reviewStateRepository!.delete(r.id)));
   sendResponse({ success: true });
 }
 
@@ -439,7 +488,7 @@ async function handleOpenLibrary(message: any, sendResponse: (response: MessageR
     });
     sendResponse({ success: true });
   } catch (err) {
-    logger.error('Failed to open popup', err);
+    log.error('Failed to open popup', err);
     sendResponse({ success: false, error: 'Failed to open popup' });
   }
 }
@@ -455,8 +504,9 @@ async function handleUploadSnapshot(sendResponse: (response: MessageResponse) =>
     return;
   }
 
-  const snapshotWords = await wordRepository.findAll();
-  const allReviewStates = await reviewStateRepository.findAll();
+  await ensureRepositories();
+  const snapshotWords = await wordRepository!.findAll();
+  const allReviewStates = await reviewStateRepository!.findAll();
 
   const reviewStatesMap: Record<string, unknown> = {};
   allReviewStates.forEach((state) => {
@@ -485,7 +535,7 @@ async function handleUploadSnapshot(sendResponse: (response: MessageResponse) =>
       sendResponse({ success: false, error: result.error || 'Upload failed' });
     }
   } catch (uploadError) {
-    logger.error('Snapshot upload error', uploadError);
+    log.error('Snapshot upload error', uploadError);
     sendResponse({
       success: false,
       error: uploadError instanceof Error ? uploadError.message : 'Upload failed',
@@ -536,20 +586,21 @@ async function handleAnalyzePageAI(
 
     // 분석 이력 저장
     try {
-      await AIAnalysisHistoryRepository.createAnalysisHistory({
+      await ensureRepositories();
+      await AIAnalysisHistoryRepository.createAnalysisHistory(db!, {
         pageUrl: request.pageUrl,
         pageTitle: request.pageTitle,
         summary: result.summary,
         difficulty: result.difficulty,
         recommendedWords: result.recommendedWords,
       });
-      logger.info('AI analysis history saved');
+      log.info('AI analysis history saved');
     } catch (historyError) {
-      logger.error('Failed to save analysis history', historyError);
+      log.error('Failed to save analysis history', historyError);
       // 이력 저장 실패는 메인 기능에 영향을 주지 않음
     }
 
-    logger.info('AI analysis completed', {
+    log.info('AI analysis completed', {
       url: request.pageUrl,
       recommendedWords: result.recommendedWords.length,
     });
@@ -561,11 +612,11 @@ async function handleAnalyzePageAI(
         chrome.tabs.sendMessage(tabs[0].id, {
           type: 'AI_ANALYSIS_COMPLETED',
         }).catch((err) => {
-          logger.debug('Failed to send AI_ANALYSIS_COMPLETED message', err);
+          log.debug('Failed to send AI_ANALYSIS_COMPLETED message', err);
         });
       }
     } catch (err) {
-      logger.debug('Failed to notify content script', err);
+      log.debug('Failed to notify content script', err);
     }
 
     sendResponse({
@@ -573,7 +624,7 @@ async function handleAnalyzePageAI(
       data: result,
     });
   } catch (error) {
-    logger.error('AI analysis failed', error);
+    log.error('AI analysis failed', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'AI analysis failed',
@@ -588,14 +639,15 @@ async function handleGetAnalysisHistory(
   sendResponse: (response: MessageResponse) => void
 ): Promise<void> {
   try {
-    const histories = await AIAnalysisHistoryRepository.findAllAnalysisHistory(20);
+    await ensureRepositories();
+    const histories = await AIAnalysisHistoryRepository.findAllAnalysisHistory(db!, 20);
 
     sendResponse({
       success: true,
       data: histories,
     });
   } catch (error) {
-    logger.error('Failed to get analysis history', error);
+    log.error('Failed to get analysis history', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get analysis history',
@@ -617,7 +669,7 @@ async function handleGetAIUsageStats(
       data: stats,
     });
   } catch (error) {
-    logger.error('Failed to get AI usage stats', error);
+    log.error('Failed to get AI usage stats', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get stats',
@@ -647,7 +699,7 @@ async function handleGetRecommendedWords(
       data: recommended,
     });
   } catch (error) {
-    logger.error('Failed to get recommended words', error);
+    log.error('Failed to get recommended words', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get recommendations',
@@ -676,7 +728,7 @@ async function handleCalculateWordImportance(
       data: importance,
     });
   } catch (error) {
-    logger.error('Failed to calculate word importance', error);
+    log.error('Failed to calculate word importance', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Calculation failed',
@@ -694,7 +746,7 @@ async function handlePDFTextSelected(
   try {
     const { text, pageInfo } = message.data;
 
-    logger.info('PDF text selected', {
+    log.info('PDF text selected', {
       text: text.substring(0, 50),
       page: pageInfo.pageNumber,
       pdfTitle: pageInfo.pdfTitle,
@@ -715,7 +767,7 @@ async function handlePDFTextSelected(
       },
     });
   } catch (error) {
-    logger.error('PDF text selection handler error', error);
+    log.error('PDF text selection handler error', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'PDF selection failed',
@@ -733,7 +785,7 @@ async function handleQuickLookup(
   try {
     const { word } = message.data;
 
-    logger.info('Quick lookup requested', { word });
+    log.info('Quick lookup requested', { word });
 
     // 단어 조회
     const lookupResult = await lookupWord(word);
@@ -754,7 +806,7 @@ async function handleQuickLookup(
       },
     });
   } catch (error) {
-    logger.error('Quick lookup handler error', error);
+    log.error('Quick lookup handler error', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Quick lookup failed',
@@ -772,7 +824,7 @@ async function handleQuickSave(
   try {
     const { word, context, url, sourceTitle } = message.data;
 
-    logger.info('Quick save requested', { word });
+    log.info('Quick save requested', { word });
 
     // 단어 조회 후 저장
     const lookupResult = await lookupWord(word);
@@ -795,7 +847,7 @@ async function handleQuickSave(
       data: result,
     });
   } catch (error) {
-    logger.error('Quick save handler error', error);
+    log.error('Quick save handler error', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Quick save failed',
@@ -811,8 +863,9 @@ async function handleGenerateMobileQuizLink(
   sendResponse: (response: MessageResponse) => void
 ): Promise<void> {
   try {
+    await ensureRepositories();
     // 모든 단어 조회
-    const allWords = await wordRepository.findAll();
+    const allWords = await wordRepository!.findAll();
 
     // 삭제된 단어 제외
     const activeWords = allWords.filter((word) => !word.deletedAt);
@@ -838,7 +891,7 @@ async function handleGenerateMobileQuizLink(
       },
     });
   } catch (error) {
-    logger.error('Generate mobile quiz link handler error', error);
+    log.error('Generate mobile quiz link handler error', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Firebase 업로드에 실패했습니다',
@@ -861,7 +914,7 @@ async function handleExportAllData(
       data: backupData,
     });
   } catch (error) {
-    logger.error('Export all data handler error', error);
+    log.error('Export all data handler error', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to export data',
@@ -886,10 +939,120 @@ async function handleImportAllData(
       data: result,
     });
   } catch (error) {
-    logger.error('Import all data handler error', error);
+    log.error('Import all data handler error', error);
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to import data',
+    });
+  }
+}
+
+/**
+ * 구글 로그인 핸들러
+ */
+async function handleGoogleSignIn(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    const { signInWithGoogle } = await import('./firebaseAuthService');
+    const user = await signInWithGoogle();
+
+    if (user) {
+      sendResponse({
+        success: true,
+        data: {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        },
+      });
+    } else {
+      sendResponse({
+        success: false,
+        error: '로그인에 실패했습니다.',
+      });
+    }
+  } catch (error) {
+    log.error('Google sign-in handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to sign in',
+    });
+  }
+}
+
+/**
+ * 로그아웃 핸들러
+ */
+async function handleGoogleSignOut(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    const { signOut } = await import('./firebaseAuthService');
+    await signOut();
+
+    sendResponse({
+      success: true,
+    });
+  } catch (error) {
+    log.error('Sign out handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to sign out',
+    });
+  }
+}
+
+/**
+ * 현재 사용자 정보 가져오기 핸들러
+ */
+async function handleGetCurrentUser(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    const { getCurrentUser } = await import('./firebaseAuthService');
+    const user = await getCurrentUser();
+
+    if (user) {
+      sendResponse({
+        success: true,
+        data: {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        },
+      });
+    } else {
+      sendResponse({
+        success: true,
+        data: null,
+      });
+    }
+  } catch (error) {
+    log.error('Get current user handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get user',
+    });
+  }
+}
+
+/**
+ * 모바일 학습 데이터 동기화 핸들러
+ */
+async function handleSyncFromMobile(
+  message: { quizId: string },
+  sendResponse: (response: MessageResponse) => void
+): Promise<void> {
+  try {
+    const { syncReviewStatesFromFirebase } = await import('./firebaseQuizService');
+    const syncedCount = await syncReviewStatesFromFirebase(message.quizId);
+
+    sendResponse({
+      success: true,
+      data: { syncedCount },
+    });
+  } catch (error) {
+    log.error('Sync from mobile handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to sync from mobile',
     });
   }
 }

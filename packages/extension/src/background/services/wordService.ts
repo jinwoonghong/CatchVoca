@@ -3,16 +3,37 @@
  * 단어 저장 및 조회 로직
  */
 
-import { wordRepository, reviewStateRepository, eventBus, Logger, createInitialReviewState } from '@catchvoca/core';
+import { createWordRepository, createReviewStateRepository, eventBus, createInitialReviewState } from '@catchvoca/core';
 import type { WordEntryInput } from '@catchvoca/types';
 import { lookupWord } from './dictionaryAPI';
+import { getDbInstance } from '../dbInstance';
 
-const logger = new Logger('WordService');
+// Lazy initialization
+let wordRepository: ReturnType<typeof createWordRepository> | null = null;
+let reviewStateRepository: ReturnType<typeof createReviewStateRepository> | null = null;
+
+async function ensureRepositories() {
+  if (!wordRepository) {
+    const db = await getDbInstance();
+    wordRepository = createWordRepository(db);
+    reviewStateRepository = createReviewStateRepository(db);
+  }
+}
+
+// 간단한 로거 (background service worker용)
+const logger = {
+  info: (msg: string, data?: any) => console.log(`[WordService] ${msg}`, data || ''),
+  error: (msg: string, error?: any) => console.error(`[WordService] ${msg}`, error || ''),
+  warn: (msg: string, data?: any) => console.warn(`[WordService] ${msg}`, data || ''),
+  debug: (msg: string, data?: any) => console.debug(`[WordService] ${msg}`, data || ''),
+};
 
 /**
  * 단어 저장 (API 조회 + DB 저장)
  */
 export async function saveWord(wordData: Partial<WordEntryInput>): Promise<string> {
+  await ensureRepositories();
+
   if (!wordData.word) {
     throw new Error('Word is required');
   }
@@ -47,12 +68,12 @@ export async function saveWord(wordData: Partial<WordEntryInput>): Promise<strin
   };
 
   // 3. Repository를 통해 저장
-  const wordId = await wordRepository.create(wordEntryData);
+  const wordId = await wordRepository!.create(wordEntryData);
 
   // 4. ReviewState 자동 생성 (SM-2 복습 시스템)
   try {
     const initialReviewState = createInitialReviewState(wordId);
-    await reviewStateRepository.create({
+    await reviewStateRepository!.create({
       wordId: initialReviewState.wordId,
       nextReviewAt: initialReviewState.nextReviewAt,
       interval: initialReviewState.interval,
@@ -102,12 +123,14 @@ export async function saveWord(wordData: Partial<WordEntryInput>): Promise<strin
  * 단어 정보 가져오기 (viewCount, isSaved 포함)
  */
 export async function getWordInfo(word: string) {
+  await ensureRepositories();
+
   let viewCount = 0;
   let isSaved = false;
   let wordId: string | undefined;
 
   try {
-    const existingWords = await wordRepository.findByNormalizedWord(word);
+    const existingWords = await wordRepository!.findByNormalizedWord(word);
     if (existingWords.length > 0 && existingWords[0]) {
       viewCount = existingWords[0].viewCount || 0;
       isSaved = true;
@@ -124,10 +147,12 @@ export async function getWordInfo(word: string) {
  * 단어 조회수 증가
  */
 export async function incrementWordViewCount(word: string): Promise<boolean> {
+  await ensureRepositories();
+
   try {
-    const existingWords = await wordRepository.findByNormalizedWord(word);
+    const existingWords = await wordRepository!.findByNormalizedWord(word);
     if (existingWords.length > 0 && existingWords[0]) {
-      await wordRepository.incrementViewCount(existingWords[0].id);
+      await wordRepository!.incrementViewCount(existingWords[0].id);
       return true;
     }
     return false;

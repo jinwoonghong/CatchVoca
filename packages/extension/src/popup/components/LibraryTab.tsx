@@ -582,7 +582,7 @@ export function LibraryTab() {
                 d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
               />
             </svg>
-            {isGeneratingLink ? '생성 중...' : '📱 모바일 퀴즈 링크 생성'}
+            {isGeneratingLink ? '생성 중...' : '📱 모바일에서 학습하기'}
           </button>
           {mobileQuizUrl && (
             <button

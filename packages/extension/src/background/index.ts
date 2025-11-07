@@ -3,12 +3,28 @@
  * 메시지 라우팅 및 컨텍스트 메뉴 관리
  */
 
-import { db, Logger } from '@catchvoca/core';
 import type { WordEntryInput } from '@catchvoca/types';
 import { handleMessage } from './services/messageHandlers';
 import { saveWord } from './services/wordService';
 
-const logger = new Logger('Background');
+// Background Service Worker용 DB 인스턴스는 동적 로드 후 생성
+// (Dexie가 window를 참조하므로 모듈 로드 시점에 생성 불가)
+let db: any = null;
+
+async function initDb() {
+  if (!db) {
+    const { CheckVocaDB } = await import('@catchvoca/core');
+    db = new CheckVocaDB();
+  }
+  return db;
+}
+
+// 간단한 로거 (background service worker용)
+const log = {
+  info: (msg: string, data?: any) => console.log(`[Background] ${msg}`, data || ''),
+  error: (msg: string, error?: any) => console.error(`[Background] ${msg}`, error || ''),
+  warn: (msg: string, data?: any) => console.warn(`[Background] ${msg}`, data || ''),
+};
 
 // DB 초기화
 let dbInitialized = false;
@@ -16,11 +32,12 @@ let dbInitialized = false;
 async function ensureDbInitialized(): Promise<void> {
   if (!dbInitialized) {
     try {
-      await db.open();
+      const dbInstance = await initDb();
+      await dbInstance.open();
       dbInitialized = true;
-      logger.info('Database initialized successfully');
+      log.info('Database initialized successfully');
     } catch (error) {
-      logger.error('Database initialization failed', error);
+      log.error('Database initialization failed', error);
       throw error;
     }
   }
@@ -36,7 +53,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     contexts: ['selection'],
   });
 
-  logger.info('Background service worker installed');
+  log.info('Background service worker installed');
 });
 
 // 컨텍스트 메뉴 클릭 이벤트
@@ -45,7 +62,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const selectedText = info.selectionText.trim();
 
     if (selectedText.length < 1 || selectedText.length > 50) {
-      logger.warn('Invalid word length', { length: selectedText.length });
+      log.warn('Invalid word length', { length: selectedText.length });
       return;
     }
 
@@ -59,7 +76,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         await saveWord(response.data);
       }
     } catch (error) {
-      logger.error('Failed to get selection context', error);
+      log.error('Failed to get selection context', error);
 
       // 최소한의 정보로 저장
       await saveWord({
@@ -85,7 +102,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 chrome.commands.onCommand.addListener(async (command) => {
   await ensureDbInitialized();
 
-  logger.info('Command triggered', { command });
+  log.info('Command triggered', { command });
 
   if (command === 'save-word') {
     await handleSaveWordShortcut();
@@ -103,7 +120,7 @@ async function handleSaveWordShortcut(): Promise<void> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
-      logger.warn('No active tab found');
+      log.warn('No active tab found');
       return;
     }
 
@@ -123,7 +140,7 @@ async function handleSaveWordShortcut(): Promise<void> {
         message: `"${response.data.word}" saved successfully!`,
       });
     } else {
-      logger.warn('No text selected');
+      log.warn('No text selected');
       await chrome.notifications.create({
         type: 'basic',
         iconUrl: 'icon.png',
@@ -132,7 +149,7 @@ async function handleSaveWordShortcut(): Promise<void> {
       });
     }
   } catch (error) {
-    logger.error('Save word shortcut failed', error);
+    log.error('Save word shortcut failed', error);
   }
 }
 
@@ -151,9 +168,9 @@ async function handleStartQuizShortcut(): Promise<void> {
       // Popup might not be loaded yet, ignore error
     });
 
-    logger.info('Quiz shortcut triggered');
+    log.info('Quiz shortcut triggered');
   } catch (error) {
-    logger.error('Start quiz shortcut failed', error);
+    log.error('Start quiz shortcut failed', error);
   }
 }
 
@@ -165,7 +182,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
-      logger.warn('No active tab found for PDF lookup');
+      log.warn('No active tab found for PDF lookup');
       return;
     }
 
@@ -174,11 +191,11 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
                   tab.url?.includes('chrome-extension://') && tab.url?.includes('.pdf');
 
     if (!isPDF) {
-      logger.info('Not a PDF page, ignoring lookup-word-pdf command');
+      log.info('Not a PDF page, ignoring lookup-word-pdf command');
       return;
     }
 
-    logger.info('PDF lookup shortcut triggered on tab', { tabId: tab.id, url: tab.url });
+    log.info('PDF lookup shortcut triggered on tab', { tabId: tab.id, url: tab.url });
 
     // 1단계: 선택된 텍스트를 자동으로 복사
     try {
@@ -202,7 +219,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 100));
 
     } catch (scriptError) {
-      logger.warn('Auto-copy script failed, trying clipboard read', scriptError);
+      log.warn('Auto-copy script failed, trying clipboard read', scriptError);
     }
 
     // 2단계: 클립보드에서 텍스트 읽기
@@ -212,7 +229,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
       const clipboardText = await readClipboard();
 
       if (!clipboardText || !clipboardText.trim()) {
-        logger.warn('Clipboard is empty');
+        log.warn('Clipboard is empty');
         await chrome.notifications.create({
           type: 'basic',
           iconUrl: 'icon.png',
@@ -226,7 +243,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
 
       // 단어 길이 검증 (1-50자)
       if (word.length < 1 || word.length >= 50) {
-        logger.warn('Invalid word length', { length: word.length });
+        log.warn('Invalid word length', { length: word.length });
         await chrome.notifications.create({
           type: 'basic',
           iconUrl: 'icon.png',
@@ -239,7 +256,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
       // 단어 개수 검증 (최대 3단어)
       const words = word.split(/\s+/);
       if (words.length > 3) {
-        logger.warn('Too many words', { count: words.length });
+        log.warn('Too many words', { count: words.length });
         await chrome.notifications.create({
           type: 'basic',
           iconUrl: 'icon.png',
@@ -249,7 +266,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
         return;
       }
 
-      logger.info('Valid word from clipboard', { word });
+      log.info('Valid word from clipboard', { word });
 
       // 팝업을 열고 PDF 조회 정보 저장
       // 팝업이 열리면 자동으로 이 정보를 읽어서 단어 조회
@@ -261,10 +278,10 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
       });
 
       await chrome.action.openPopup();
-      logger.info('PDF lookup initiated, popup opened');
+      log.info('PDF lookup initiated, popup opened');
 
     } catch (error) {
-      logger.error('Failed to read clipboard', error);
+      log.error('Failed to read clipboard', error);
       await chrome.notifications.create({
         type: 'basic',
         iconUrl: 'icon.png',
@@ -273,7 +290,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
       });
     }
   } catch (error) {
-    logger.error('PDF lookup shortcut failed', error);
+    log.error('PDF lookup shortcut failed', error);
   }
 }
 
@@ -298,7 +315,7 @@ async function readClipboard(): Promise<string> {
 
     throw new Error('Failed to read clipboard from offscreen document');
   } catch (error) {
-    logger.error('Clipboard read failed', error);
+    log.error('Clipboard read failed', error);
     return '';
   }
 }
@@ -329,4 +346,4 @@ async function setupOffscreenDocument(): Promise<void> {
   });
 }
 
-logger.info('Background service worker loaded');
+log.info('Background service worker loaded');

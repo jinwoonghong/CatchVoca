@@ -4,7 +4,6 @@
   "version": "0.5.0",
   "description": "Local-First vocabulary learning with SM-2 spaced repetition",
   "author": "CatchVoca Team",
-
   "permissions": [
     "storage",
     "contextMenus",
@@ -13,30 +12,32 @@
     "notifications",
     "clipboardRead",
     "offscreen",
-    "scripting"
+    "scripting",
+    "identity"
   ],
-
   "host_permissions": [
     "https://*/*"
   ],
-
   "action": {
     "default_popup": "index.html"
   },
-
   "background": {
     "service_worker": "src/background/index.ts",
     "type": "module"
   },
-
   "content_scripts": [
     {
-      "matches": ["https://*/*", "http://*/*", "file:///*"],
-      "js": ["src/content/index.ts"],
+      "matches": [
+        "https://*/*",
+        "http://*/*",
+        "file:///*"
+      ],
+      "js": [
+        "src/content/index.ts"
+      ],
       "run_at": "document_idle"
     }
   ],
-
   "declarative_net_request": {
     "rule_resources": [
       {
@@ -46,7 +47,6 @@
       }
     ]
   },
-
   "commands": {
     "save-word": {
       "suggested_key": {
@@ -75,5 +75,14 @@
         "mac": "Command+Shift+V"
       }
     }
+  },
+  "oauth2": {
+    "client_id": "967073037521-9aktuiclhstdgcu2h0hbao9oea8s4o2i.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ]
   }
 }
+
+

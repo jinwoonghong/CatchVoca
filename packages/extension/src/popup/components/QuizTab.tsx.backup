@@ -3,25 +3,16 @@
  * - SM-2 기반 복습
  * - 카드 UI
  * - 진행률 표시
- * - 모바일 퀴즈 생성 (구글 로그인 필요)
  */
 
 import { useState, useEffect } from 'react';
 import type { WordEntry, Rating } from '@catchvoca/types';
-import QRCode from 'qrcode';
 
 interface ReviewSession {
   words: WordEntry[];
   currentIndex: number;
   completed: number;
   showAnswer: boolean;
-}
-
-interface UserInfo {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
 }
 
 export function QuizTab() {
@@ -34,66 +25,12 @@ export function QuizTab() {
     completedToday: number;
   } | null>(null);
 
-  // 모바일 퀴즈 상태
-  const [isUploading, setIsUploading] = useState(false);
-  const [mobileUrl, setMobileUrl] = useState<string | null>(null);
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
-
-  // 사용자 인증 상태
-  const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
-
   /**
    * 복습 통계 로드
    */
   useEffect(() => {
     loadStats();
   }, []);
-
-  /**
-   * 현재 사용자 확인
-   */
-  useEffect(() => {
-    checkCurrentUser();
-  }, []);
-
-  const checkCurrentUser = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'GET_CURRENT_USER' });
-      if (response.success && response.data) {
-        setCurrentUser(response.data);
-      }
-    } catch (err) {
-      console.error('[QuizTab] Check user error:', err);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'GOOGLE_SIGN_IN' });
-      if (response.success && response.data) {
-        setCurrentUser(response.data);
-        alert(`✅ 로그인 성공!\n\n${response.data.email}님, 환영합니다!`);
-      } else {
-        alert('❌ 로그인에 실패했습니다.\n\n' + (response.error || '알 수 없는 오류'));
-      }
-    } catch (err) {
-      console.error('[QuizTab] Sign in error:', err);
-      alert('로그인 중 오류가 발생했습니다.');
-    }
-  };
-
-  const handleGoogleSignOut = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'GOOGLE_SIGN_OUT' });
-      if (response.success) {
-        setCurrentUser(null);
-        alert('✅ 로그아웃되었습니다.');
-      }
-    } catch (err) {
-      console.error('[QuizTab] Sign out error:', err);
-      alert('로그아웃 중 오류가 발생했습니다.');
-    }
-  };
 
   const loadStats = async () => {
     try {
@@ -173,7 +110,7 @@ export function QuizTab() {
         return;
       }
 
-      // 다음 단어로 이동 또는 세션 자동 종료
+      // 다음 단어로 이동 또는 세션 종료
       if (session.currentIndex + 1 < session.words.length) {
         setSession({
           ...session,
@@ -182,14 +119,13 @@ export function QuizTab() {
           showAnswer: false,
         });
       } else {
-        // 마지막 단어 완료 → 자동 종료
-        setSession(null);
+        // 세션 완료
+        setSession({
+          ...session,
+          completed: session.completed + 1,
+          showAnswer: false,
+        });
         loadStats();
-
-        // 완료 메시지 표시
-        setTimeout(() => {
-          alert(`🎉 복습 완료!\n\n${session.words.length}개의 단어를 모두 복습했습니다.`);
-        }, 100);
       }
     } catch (err) {
       alert('평가 제출 중 오류가 발생했습니다.');
@@ -203,98 +139,6 @@ export function QuizTab() {
   const endSession = () => {
     setSession(null);
     loadStats();
-  };
-
-  /**
-   * 모바일 퀴즈 URL 생성 (Firebase 방식)
-   */
-  const handleGenerateMobileQuiz = async () => {
-    setIsUploading(true);
-    setMobileUrl(null);
-    setQrCodeDataUrl(null);
-
-    try {
-      // 로그인 확인
-      if (!currentUser) {
-        const shouldSignIn = confirm(
-          '구글 로그인이 필요합니다.\n\n' +
-          '모바일 학습 기능을 사용하려면 구글 계정으로 로그인해주세요.\n\n' +
-          '지금 로그인하시겠습니까?'
-        );
-
-        if (shouldSignIn) {
-          await handleGoogleSignIn();
-          // 로그인 후 다시 확인
-          const userResponse = await chrome.runtime.sendMessage({ type: 'GET_CURRENT_USER' });
-          if (!userResponse.success || !userResponse.data) {
-            setIsUploading(false);
-            return;
-          }
-          setCurrentUser(userResponse.data);
-        } else {
-          setIsUploading(false);
-          return;
-        }
-      }
-
-      // 1. Background에서 모바일 퀴즈 링크 생성 요청 (Firebase 방식)
-      const response = await chrome.runtime.sendMessage({ type: 'GENERATE_MOBILE_QUIZ_LINK' });
-
-      if (response.success && response.data) {
-        const { url, expiresAt } = response.data;
-        setMobileUrl(url);
-
-        // 2. QR 코드 생성
-        try {
-          const qrDataUrl = await QRCode.toDataURL(url, {
-            width: 200,
-            margin: 2,
-            color: {
-              dark: '#000000',
-              light: '#FFFFFF',
-            },
-          });
-          setQrCodeDataUrl(qrDataUrl);
-        } catch (qrErr) {
-          console.error('[QuizTab] QR code generation error:', qrErr);
-          alert('⚠️ QR 코드 생성에 실패했습니다.\nURL을 직접 복사해서 사용해주세요.');
-        }
-
-        // 3. 성공 메시지
-        const expirationDate = new Date(expiresAt);
-        const expirationStr = `${expirationDate.getMonth() + 1}/${expirationDate.getDate()} ${expirationDate.getHours()}:${expirationDate.getMinutes().toString().padStart(2, '0')}`;
-
-        alert(
-          `✅ 모바일 퀴즈가 생성되었습니다!\n\n` +
-          `📱 만료일시: ${expirationStr}\n` +
-          `🔗 링크가 자동으로 복사되었습니다.\n\n` +
-          `💡 QR 코드를 스캔하거나 링크를 공유하세요!`
-        );
-      } else {
-        alert(response.error || '❌ 저장된 단어가 없습니다.\n\n먼저 단어를 저장해주세요!');
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류';
-      alert(`모바일 퀴즈 생성 중 오류가 발생했습니다.\n\n${errorMessage}`);
-      console.error('[QuizTab] Generate mobile quiz error:', err);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  /**
-   * 모바일 URL 복사
-   */
-  const handleCopyUrl = async () => {
-    if (!mobileUrl) return;
-
-    try {
-      await navigator.clipboard.writeText(mobileUrl);
-      alert('✅ URL이 클립보드에 복사되었습니다!');
-    } catch (err) {
-      console.error('[QuizTab] Copy URL error:', err);
-      alert('❌ URL 복사에 실패했습니다.');
-    }
   };
 
   // 세션이 없는 경우 (시작 화면)
@@ -347,99 +191,14 @@ export function QuizTab() {
           <p className="mt-2 text-sm text-gray-600">
             {stats ? `오늘 ${stats.dueToday}개의 단어를 복습할 수 있습니다` : '복습할 단어를 불러오는 중...'}
           </p>
-
-          {/* 로그인 상태 표시 */}
-          {currentUser && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-              <div className="flex items-center gap-2 justify-center">
-                {currentUser.photoURL && (
-                  <img
-                    src={currentUser.photoURL}
-                    alt="Profile"
-                    className="w-8 h-8 rounded-full"
-                  />
-                )}
-                <div className="flex-1 text-left">
-                  <p className="text-sm font-medium text-blue-900">
-                    {currentUser.displayName || currentUser.email}
-                  </p>
-                  <p className="text-xs text-blue-700">✅ 로그인됨</p>
-                </div>
-                <button
-                  onClick={handleGoogleSignOut}
-                  className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  로그아웃
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-6 flex gap-3">
-            <button
-              onClick={startReview}
-              disabled={isLoading || (stats?.dueToday === 0)}
-              className="flex-1 px-6 py-3 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              {isLoading ? '로딩 중...' : '학습하기'}
-            </button>
-            <button
-              onClick={handleGenerateMobileQuiz}
-              disabled={isUploading}
-              className="flex-1 px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
-            >
-              {isUploading ? '생성 중...' : '📱 모바일 학습'}
-            </button>
-          </div>
+          <button
+            onClick={startReview}
+            disabled={isLoading || (stats?.dueToday === 0)}
+            className="mt-6 px-6 py-3 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            {isLoading ? '로딩 중...' : '시작하기'}
+          </button>
         </div>
-
-        {/* 모바일 퀴즈 URL & QR 코드 (버튼 클릭 후 표시) */}
-        {mobileUrl && (
-          <div className="p-4 bg-green-50 border border-green-200 rounded-md space-y-3">
-            <p className="text-sm text-green-800 font-medium">
-              ✅ 모바일 퀴즈가 생성되었습니다!
-            </p>
-
-            {/* QR 코드 */}
-            {qrCodeDataUrl && (
-              <div className="flex justify-center">
-                <div className="p-3 bg-white rounded-lg shadow-sm">
-                  <img
-                    src={qrCodeDataUrl}
-                    alt="QR Code"
-                    className="w-48 h-48"
-                  />
-                  <p className="text-xs text-center text-gray-600 mt-2">
-                    📱 모바일로 스캔하세요
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* URL */}
-            <div>
-              <p className="text-xs text-gray-700 mb-1 font-medium">또는 URL 직접 복사:</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={mobileUrl}
-                  readOnly
-                  className="flex-1 px-3 py-2 text-xs bg-white border border-green-300 rounded-md"
-                />
-                <button
-                  onClick={handleCopyUrl}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm whitespace-nowrap"
-                >
-                  복사
-                </button>
-              </div>
-            </div>
-
-            <p className="text-xs text-green-700">
-              💡 QR 코드를 스캔하거나 URL을 복사하여 모바일 브라우저에서 열어 복습하세요
-            </p>
-          </div>
-        )}
       </div>
     );
   }

@@ -58,7 +58,7 @@ function App() {
             active={activeTab === 'review'}
             onClick={() => setActiveTab('review')}
           >
-            🎯 복습
+            🎯 학습
           </TabButton>
           <TabButton
             active={activeTab === 'library'}

@@ -1,0 +1,16 @@
+
+      case 'GOOGLE_SIGN_IN':
+        await handleGoogleSignIn(sendResponse);
+        break;
+
+      case 'GOOGLE_SIGN_OUT':
+        await handleGoogleSignOut(sendResponse);
+        break;
+
+      case 'GET_CURRENT_USER':
+        await handleGetCurrentUser(sendResponse);
+        break;
+
+      case 'SYNC_FROM_MOBILE':
+        await handleSyncFromMobile(message, sendResponse);
+        break;

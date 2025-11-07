@@ -4,15 +4,18 @@
  */
 
 import type { AIAnalysisHistory } from '@catchvoca/types';
-import { db } from '../db/database';
-import { Logger } from '../utils/logger';
+import type { CheckVocaDB } from '../db/database';
 
-const logger = new Logger('AIAnalysisHistoryRepository');
+// 간단한 로거 (service worker 호환)
+const log = {
+  info: (msg: string, data?: any) => console.log(`[AIAnalysisHistoryRepository] ${msg}`, data || ''),
+  error: (msg: string, error?: any) => console.error(`[AIAnalysisHistoryRepository] ${msg}`, error || ''),
+};
 
 /**
  * AI 분석 이력 조회 (최신순)
  */
-export async function findAllAnalysisHistory(limit = 20): Promise<AIAnalysisHistory[]> {
+export async function findAllAnalysisHistory(db: CheckVocaDB, limit = 20): Promise<AIAnalysisHistory[]> {
   try {
     const histories = await db.analysisHistory
       .orderBy('analyzedAt')
@@ -20,10 +23,10 @@ export async function findAllAnalysisHistory(limit = 20): Promise<AIAnalysisHist
       .limit(limit)
       .toArray();
 
-    logger.info('Find all analysis history', { count: histories.length });
+    log.info('Find all analysis history', { count: histories.length });
     return histories;
   } catch (error) {
-    logger.error('Failed to find analysis history', error);
+    log.error('Failed to find analysis history', error);
     throw error;
   }
 }
@@ -32,6 +35,7 @@ export async function findAllAnalysisHistory(limit = 20): Promise<AIAnalysisHist
  * AI 분석 이력 생성
  */
 export async function createAnalysisHistory(
+  db: CheckVocaDB,
   data: Omit<AIAnalysisHistory, 'id' | 'analyzedAt' | 'savedWordsCount'>
 ): Promise<AIAnalysisHistory> {
   try {
@@ -44,11 +48,11 @@ export async function createAnalysisHistory(
     };
 
     await db.analysisHistory.add(history);
-    logger.info('Created analysis history', { id: history.id });
+    log.info('Created analysis history', { id: history.id });
 
     return history;
   } catch (error) {
-    logger.error('Failed to create analysis history', error);
+    log.error('Failed to create analysis history', error);
     throw error;
   }
 }
@@ -56,7 +60,7 @@ export async function createAnalysisHistory(
 /**
  * AI 분석 이력 단어 저장 카운트 증가
  */
-export async function incrementSavedWordsCount(id: string): Promise<void> {
+export async function incrementSavedWordsCount(db: CheckVocaDB, id: string): Promise<void> {
   try {
     const history = await db.analysisHistory.get(id);
     if (!history) {
@@ -67,9 +71,9 @@ export async function incrementSavedWordsCount(id: string): Promise<void> {
       savedWordsCount: (history.savedWordsCount || 0) + 1,
     });
 
-    logger.info('Incremented saved words count', { id, newCount: history.savedWordsCount + 1 });
+    log.info('Incremented saved words count', { id, newCount: history.savedWordsCount + 1 });
   } catch (error) {
-    logger.error('Failed to increment saved words count', error);
+    log.error('Failed to increment saved words count', error);
     throw error;
   }
 }
@@ -77,12 +81,12 @@ export async function incrementSavedWordsCount(id: string): Promise<void> {
 /**
  * AI 분석 이력 삭제
  */
-export async function deleteAnalysisHistory(id: string): Promise<void> {
+export async function deleteAnalysisHistory(db: CheckVocaDB, id: string): Promise<void> {
   try {
     await db.analysisHistory.delete(id);
-    logger.info('Deleted analysis history', { id });
+    log.info('Deleted analysis history', { id });
   } catch (error) {
-    logger.error('Failed to delete analysis history', error);
+    log.error('Failed to delete analysis history', error);
     throw error;
   }
 }
@@ -90,12 +94,12 @@ export async function deleteAnalysisHistory(id: string): Promise<void> {
 /**
  * 모든 AI 분석 이력 삭제
  */
-export async function clearAllAnalysisHistory(): Promise<void> {
+export async function clearAllAnalysisHistory(db: CheckVocaDB): Promise<void> {
   try {
     await db.analysisHistory.clear();
-    logger.info('Cleared all analysis history');
+    log.info('Cleared all analysis history');
   } catch (error) {
-    logger.error('Failed to clear analysis history', error);
+    log.error('Failed to clear analysis history', error);
     throw error;
   }
 }

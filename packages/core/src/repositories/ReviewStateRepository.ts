@@ -10,14 +10,14 @@ import type {
   Rating,
 } from '@catchvoca/types';
 import { BaseRepository } from './BaseRepository';
-import { db } from '../db/database';
+import type { CheckVocaDB } from '../db/database';
 
 export class ReviewStateRepository extends BaseRepository<
   ReviewState,
   ReviewStateCreateDTO,
   ReviewStateUpdateDTO
 > {
-  constructor() {
+  constructor(db: CheckVocaDB) {
     super(db.reviewStates);
   }
 
@@ -176,5 +176,7 @@ export class ReviewStateRepository extends BaseRepository<
   }
 }
 
-// 싱글톤 인스턴스 export
-export const reviewStateRepository = new ReviewStateRepository();
+// Factory function for creating ReviewStateRepository instances
+export function createReviewStateRepository(db: CheckVocaDB): ReviewStateRepository {
+  return new ReviewStateRepository(db);
+}

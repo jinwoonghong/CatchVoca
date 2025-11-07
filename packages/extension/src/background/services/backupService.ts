@@ -3,10 +3,28 @@
  * 데이터 백업 및 복원 서비스
  */
 
-import { wordRepository, reviewStateRepository, Logger } from '@catchvoca/core';
+import { createWordRepository, createReviewStateRepository } from '@catchvoca/core';
 import type { WordEntry, ReviewState } from '@catchvoca/types';
+import { getDbInstance } from '../dbInstance';
 
-const logger = new Logger('BackupService');
+// Lazy initialization
+let wordRepository: ReturnType<typeof createWordRepository> | null = null;
+let reviewStateRepository: ReturnType<typeof createReviewStateRepository> | null = null;
+
+async function ensureRepositories() {
+  if (!wordRepository) {
+    const db = await getDbInstance();
+    wordRepository = createWordRepository(db);
+    reviewStateRepository = createReviewStateRepository(db);
+  }
+}
+
+// 간단한 로거 (background service worker용)
+const logger = {
+  info: (msg: string, data?: any) => console.log(`[BackupService] ${msg}`, data || ''),
+  error: (msg: string, error?: any) => console.error(`[BackupService] ${msg}`, error || ''),
+  warn: (msg: string, data?: any) => console.warn(`[BackupService] ${msg}`, data || ''),
+};
 
 export interface BackupData {
   version: string;
@@ -23,16 +41,18 @@ export interface BackupData {
  * 모든 데이터 백업
  */
 export async function exportAllData(): Promise<BackupData> {
+  await ensureRepositories();
+
   try {
     logger.info('Starting data export');
 
     // 모든 단어 조회
-    const words = await wordRepository.findAll();
+    const words = await wordRepository!.findAll();
 
     // 모든 복습 상태 조회
     const reviewStates: ReviewState[] = [];
     for (const word of words) {
-      const reviewState = await reviewStateRepository.findByWordId(word.id);
+      const reviewState = await reviewStateRepository!.findByWordId(word.id);
       if (reviewState) {
         reviewStates.push(reviewState);
       }
@@ -75,6 +95,8 @@ export async function importAllData(
   importedReviewStates: number;
   skippedWords: number;
 }> {
+  await ensureRepositories();
+
   const { clearExisting = false, skipDuplicates = true } = options;
 
   try {
@@ -88,9 +110,9 @@ export async function importAllData(
     // 기존 데이터 삭제 옵션
     if (clearExisting) {
       logger.warn('Clearing existing data');
-      const existingWords = await wordRepository.findAll();
+      const existingWords = await wordRepository!.findAll();
       for (const word of existingWords) {
-        await wordRepository.delete(word.id);
+        await wordRepository!.delete(word.id);
       }
     }
 
@@ -103,7 +125,7 @@ export async function importAllData(
       try {
         // 중복 체크
         if (skipDuplicates) {
-          const existing = await wordRepository.findById(word.id);
+          const existing = await wordRepository!.findById(word.id);
           if (existing) {
             skippedWords++;
             continue;
@@ -111,7 +133,7 @@ export async function importAllData(
         }
 
         // 단어 저장
-        await wordRepository.create(word);
+        await wordRepository!.create(word);
         importedWords++;
 
         // 해당 단어의 복습 상태 복원
@@ -119,7 +141,7 @@ export async function importAllData(
           (rs) => rs.wordId === word.id
         );
         if (reviewState) {
-          await reviewStateRepository.create(reviewState);
+          await reviewStateRepository!.create(reviewState);
           importedReviewStates++;
         }
       } catch (error) {

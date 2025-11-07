@@ -4,7 +4,7 @@
 
 import type { WordEntry, WordEntryCreateDTO, WordEntryUpdateDTO } from '@catchvoca/types';
 import { BaseRepository } from './BaseRepository';
-import { db } from '../db/database';
+import type { CheckVocaDB } from '../db/database';
 import {
   normalizeWord,
   normalizeContext,
@@ -24,7 +24,7 @@ export class WordRepository extends BaseRepository<
   WordEntryCreateDTO,
   WordEntryUpdateDTO
 > {
-  constructor() {
+  constructor(db: CheckVocaDB) {
     super(db.wordEntries);
   }
 
@@ -261,5 +261,7 @@ export class WordRepository extends BaseRepository<
   }
 }
 
-// 싱글톤 인스턴스 export
-export const wordRepository = new WordRepository();
+// Factory function for creating WordRepository instances
+export function createWordRepository(db: CheckVocaDB): WordRepository {
+  return new WordRepository(db);
+}

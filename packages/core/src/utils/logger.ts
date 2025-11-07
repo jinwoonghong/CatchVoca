@@ -132,5 +132,38 @@ export class Logger {
   }
 }
 
-// 기본 Logger 인스턴스 export
-export const logger = new Logger();
+// 기본 Logger 인스턴스 (lazy initialization)
+let _logger: Logger | null = null;
+
+export const logger = {
+  get instance(): Logger {
+    if (!_logger) {
+      _logger = new Logger();
+    }
+    return _logger;
+  },
+
+  debug(message: string, data?: unknown): void {
+    this.instance.debug(message, data);
+  },
+
+  info(message: string, data?: unknown): void {
+    this.instance.info(message, data);
+  },
+
+  warn(message: string, data?: unknown): void {
+    this.instance.warn(message, data);
+  },
+
+  error(message: string, error?: unknown): void {
+    this.instance.error(message, error);
+  },
+
+  withContext(context: string): Logger {
+    return this.instance.withContext(context);
+  },
+
+  setLogLevel(level: LogLevel): void {
+    this.instance.setLogLevel(level);
+  },
+};

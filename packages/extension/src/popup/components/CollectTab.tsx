@@ -217,27 +217,25 @@ export function CollectTab({ onSwitchToSettings: _onSwitchToSettings }: CollectT
       {/* 검색 결과 */}
       {lookupResult && (
         <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-start justify-between mb-3">
-            <div className="flex-1">
-              <h3 className="text-xl font-bold text-gray-900">{searchWord}</h3>
-              {lookupResult.phonetic && (
-                <p className="text-sm text-gray-600 mt-1">[{lookupResult.phonetic}]</p>
-              )}
-              {lookupResult.isSaved && (
-                <p className="text-xs text-green-600 mt-1">✅ 이미 저장된 단어입니다</p>
-              )}
-            </div>
-            <div className="flex space-x-2">
-              {lookupResult.audioUrl && (
-                <button
-                  onClick={handlePlayAudio}
-                  className="p-2 text-gray-600 hover:text-primary-600"
-                  title="발음 듣기"
-                >
-                  🔊
-                </button>
-              )}
-            </div>
+          <div className="mb-3">
+            <h3 className="text-xl font-bold text-gray-900">{searchWord}</h3>
+            {lookupResult.phonetic && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-sm text-gray-600">[{lookupResult.phonetic}]</span>
+                {lookupResult.audioUrl && (
+                  <button
+                    onClick={handlePlayAudio}
+                    className="text-gray-600 hover:text-primary-600"
+                    title="발음 듣기"
+                  >
+                    🔊
+                  </button>
+                )}
+              </div>
+            )}
+            {lookupResult.isSaved && (
+              <p className="text-xs text-green-600 mt-1">✅ 이미 저장된 단어입니다</p>
+            )}
           </div>
 
           {/* 정의 목록 */}

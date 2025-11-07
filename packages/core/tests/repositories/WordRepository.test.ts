@@ -11,7 +11,7 @@ describe('WordRepository', () => {
   let repository: WordRepository;
 
   beforeEach(() => {
-    repository = new WordRepository();
+    repository = new WordRepository(db);
   });
 
   afterEach(async () => {

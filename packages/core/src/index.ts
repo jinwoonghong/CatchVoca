@@ -3,14 +3,16 @@
  */
 
 // Database
-export { db, CheckVocaDB } from './db/database';
+export { CheckVocaDB } from './db/database';
+// db는 Dexie를 즉시 로드하므로 background service worker와 호환되지 않음
+// 필요한 경우 './db/database'에서 직접 import하세요
 
 // Repositories
 export { BaseRepository } from './repositories/BaseRepository';
-export { WordRepository, wordRepository } from './repositories/WordRepository';
+export { WordRepository, createWordRepository } from './repositories/WordRepository';
 export {
   ReviewStateRepository,
-  reviewStateRepository,
+  createReviewStateRepository,
 } from './repositories/ReviewStateRepository';
 export * as AIAnalysisHistoryRepository from './repositories/AIAnalysisHistoryRepository';
 

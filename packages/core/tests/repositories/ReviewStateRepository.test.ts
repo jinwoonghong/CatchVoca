@@ -12,7 +12,7 @@ describe('ReviewStateRepository', () => {
   let repository: ReviewStateRepository;
 
   beforeEach(() => {
-    repository = new ReviewStateRepository();
+    repository = new ReviewStateRepository(db);
   });
 
   afterEach(async () => {
