@@ -20,7 +20,7 @@ import { getSettings, updateSettings } from './storage';
 import { analyzePageWithGemini } from './geminiAPI';
 import { calculateBatchImportance, getRecommendedWords } from './wordImportance';
 import { canUseAI, incrementAIUsage, getAIUsageStats } from './aiUsageManager';
-import { generateMobileQuizLink, isUrlSafe } from './mobileQuizService';
+import { uploadQuizToFirebase } from './firebaseQuizService';
 import { exportAllData, importAllData } from './backupService';
 
 const logger = new Logger('MessageHandler');
@@ -807,12 +807,10 @@ async function handleQuickSave(
  * 모바일 퀴즈 링크 생성 핸들러
  */
 async function handleGenerateMobileQuizLink(
-  message: any,
+  _message: any,
   sendResponse: (response: MessageResponse) => void
 ): Promise<void> {
   try {
-    const { maxWords, prioritizeDue, includeRecent } = message.data || {};
-
     // 모든 단어 조회
     const allWords = await wordRepository.findAll();
 
@@ -827,61 +825,27 @@ async function handleGenerateMobileQuizLink(
       return;
     }
 
-    // ReviewState 맵 생성
-    const reviewStates = new Map();
-    for (const word of activeWords) {
-      const reviewState = await reviewStateRepository.findByWordId(word.id);
-      if (reviewState) {
-        reviewStates.set(word.id, reviewState);
-      }
-    }
-
-    // 퀴즈 링크 생성
-    const result = await generateMobileQuizLink(activeWords, reviewStates, {
-      maxWords: maxWords || 20,
-      prioritizeDue: prioritizeDue !== false,
-      includeRecent: includeRecent !== false,
-    });
-
-    // URL 길이 검증
-    const urlSafety = isUrlSafe(result.url);
-
-    if (!urlSafety.safe) {
-      sendResponse({
-        success: false,
-        error: `URL이 너무 깁니다 (${urlSafety.length}자). 단어 수를 줄여주세요.`,
-        details: {
-          urlLength: urlSafety.length,
-          maxLength: urlSafety.maxLength,
-          suggestedMaxWords: Math.floor(
-            (result.wordCount * urlSafety.maxLength) / urlSafety.length
-          ),
-        },
-      });
-      return;
-    }
+    // Firebase에 업로드
+    const result = await uploadQuizToFirebase(activeWords);
 
     sendResponse({
       success: true,
       data: {
         url: result.url,
+        quizId: result.quizId,
         wordCount: result.wordCount,
-        compressedSize: result.compressedSize,
-        estimatedUrlLength: result.estimatedUrlLength,
-        urlSafe: urlSafety.safe,
+        expiresAt: result.expiresAt,
       },
     });
   } catch (error) {
     logger.error('Generate mobile quiz link handler error', error);
     sendResponse({
       success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : 'Failed to generate mobile quiz link',
+      error: error instanceof Error ? error.message : 'Firebase 업로드에 실패했습니다',
     });
   }
 }
+
 
 /**
  * 데이터 내보내기 핸들러

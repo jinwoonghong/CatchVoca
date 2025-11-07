@@ -217,7 +217,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
           type: 'basic',
           iconUrl: 'icon.png',
           title: 'CatchVoca',
-          message: 'Please copy a word first (Ctrl+C)',
+          message: '📋 먼저 단어를 복사해주세요 (Ctrl+C)',
         });
         return;
       }
@@ -231,7 +231,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
           type: 'basic',
           iconUrl: 'icon.png',
           title: 'CatchVoca',
-          message: 'Word must be 1-50 characters',
+          message: '⚠️ 단어는 1-50자여야 합니다',
         });
         return;
       }
@@ -244,7 +244,7 @@ async function handleLookupWordPdfShortcut(): Promise<void> {
           type: 'basic',
           iconUrl: 'icon.png',
           title: 'CatchVoca',
-          message: 'Maximum 3 words allowed',
+          message: '⚠️ 최대 3단어까지 가능합니다',
         });
         return;
       }

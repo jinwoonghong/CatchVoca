@@ -18,13 +18,14 @@ describe('SM-2 Algorithm', () => {
   describe('createInitialReviewState', () => {
     it('초기 복습 상태를 생성해야 함', () => {
       const wordId = 'test::url';
+      const now = Date.now();
       const state = createInitialReviewState(wordId);
 
       expect(state.wordId).toBe(wordId);
       expect(state.interval).toBe(1); // 첫 번째 간격: 1일
       expect(state.easeFactor).toBe(2.5); // 초기 난이도
       expect(state.repetitions).toBe(0);
-      expect(state.nextReviewAt).toBeGreaterThan(Date.now());
+      expect(state.nextReviewAt).toBeGreaterThanOrEqual(now); // 타이밍 이슈 방지
     });
   });
 

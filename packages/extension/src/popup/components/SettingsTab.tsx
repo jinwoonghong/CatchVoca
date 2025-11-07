@@ -194,24 +194,13 @@ export function SettingsTab() {
     setQrCodeDataUrl(null);
 
     try {
-      // 1. Background에서 모바일 퀴즈 링크 생성 요청
+      // 1. Background에서 모바일 퀴즈 링크 생성 요청 (Firebase 방식)
       const response = await chrome.runtime.sendMessage({
         type: 'GENERATE_MOBILE_QUIZ_LINK',
-        options: {
-          maxWords: 20,
-          prioritizeDue: true,
-          includeRecent: true,
-        },
       });
 
       if (response.success && response.data) {
-        const { url, wordCount, compressedSize, estimatedUrlLength } = response.data;
-
-        // URL 안전성 확인 (2048자 제한)
-        if (estimatedUrlLength > 2048) {
-          alert(`⚠️ URL이 너무 깁니다 (${estimatedUrlLength}자)\n\n단어 수를 줄이거나 짧은 정의를 사용해주세요.`);
-          return;
-        }
+        const { url, quizId, wordCount, expiresAt } = response.data;
 
         setMobileUrl(url);
 
@@ -228,20 +217,26 @@ export function SettingsTab() {
           setQrCodeDataUrl(qrDataUrl);
         } catch (qrErr) {
           console.error('[SettingsTab] QR code generation error:', qrErr);
+          alert('⚠️ QR 코드 생성에 실패했습니다.\nURL을 직접 복사해서 사용해주세요.');
         }
 
         // 3. 성공 메시지
+        const expirationDate = new Date(expiresAt);
+        const expirationStr = `${expirationDate.getMonth() + 1}/${expirationDate.getDate()} ${expirationDate.getHours()}:${expirationDate.getMinutes().toString().padStart(2, '0')}`;
+
         alert(
           `✅ 모바일 퀴즈 링크 생성 완료!\n\n` +
-          `📝 단어 수: ${wordCount}개\n` +
-          `📦 압축 크기: ${compressedSize}자\n` +
-          `🔗 전체 URL 길이: ${estimatedUrlLength}자`
+          `📝 단어 수: ${wordCount}개 (전체)\n` +
+          `🔑 퀴즈 ID: ${quizId}\n` +
+          `⏰ 만료 시간: ${expirationStr} (7일)\n\n` +
+          `💡 QR 코드를 스캔하거나 링크를 공유하세요!`
         );
       } else {
-        alert('❌ 복습할 단어가 없습니다.\n\n먼저 단어를 저장해주세요!');
+        alert(response.error || '❌ 저장된 단어가 없습니다.\n\n먼저 단어를 저장해주세요!');
       }
     } catch (err) {
-      alert('모바일 퀴즈 생성 중 오류가 발생했습니다.');
+      const errorMessage = err instanceof Error ? err.message : '알 수 없는 오류';
+      alert(`모바일 퀴즈 생성 중 오류가 발생했습니다.\n\n${errorMessage}`);
       console.error('[SettingsTab] Generate mobile quiz error:', err);
     } finally {
       setIsUploading(false);

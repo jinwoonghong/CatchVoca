@@ -21,7 +21,7 @@ describe('CheckVocaDB', () => {
     it('데이터베이스가 정상적으로 생성되어야 함', () => {
       expect(db).toBeDefined();
       expect(db.name).toBe('CheckVocaDB');
-      expect(db.verno).toBe(2);
+      expect(db.verno).toBe(3); // v3: analysisHistory 테이블 추가
     });
 
     it('wordEntries 테이블이 존재해야 함', () => {

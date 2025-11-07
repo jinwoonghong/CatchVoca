@@ -40,18 +40,25 @@ export function compressWordData(
   words: WordEntry[]
 ): CompressedWordData[] {
   return words.map((word) => {
+    // 정의 길이 제한 (URL 길이 문제 해결)
+    const definitions = word.definitions || ['정의 없음'];
+    const truncatedDefinitions = definitions
+      .slice(0, 3) // 최대 3개 정의만
+      .map(def => def.length > 100 ? def.substring(0, 100) + '...' : def); // 각 정의 100자 제한
+
     const compressed: CompressedWordData = {
       w: word.word,
-      d: word.definitions || ['정의 없음'],
+      d: truncatedDefinitions,
     };
 
     // 선택 필드만 포함 (압축 효율)
     if (word.phonetic) {
       compressed.p = word.phonetic;
     }
-    if (word.audioUrl) {
-      compressed.a = word.audioUrl;
-    }
+    // audioUrl 제외 (URL 길이 절감)
+    // if (word.audioUrl) {
+    //   compressed.a = word.audioUrl;
+    // }
 
     return compressed;
   });
@@ -141,8 +148,8 @@ export async function generateMobileQuizLink(
   estimatedUrlLength: number;
 }> {
   const {
-    maxWords = 20,
-    pwaUrl = 'https://YOUR_GITHUB_USERNAME.github.io/catchvoca-quiz/',
+    maxWords = 10, // 기본 10개로 감소 (URL 길이 제한)
+    pwaUrl = 'https://jinwoonghong.github.io/CatchVoca_quiz/',
   } = options;
 
   // 1. 단어 정렬 및 필터링
