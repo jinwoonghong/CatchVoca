@@ -36,6 +36,7 @@ import { calculateBatchImportance, getRecommendedWords } from './wordImportance'
 import { canUseAI, incrementAIUsage, getAIUsageStats } from './aiUsageManager';
 import { uploadQuizToFirebase } from './firebaseQuizService';
 import { exportAllData, importAllData } from './backupService';
+import { syncService } from './syncService';
 
 // 간단한 로거 (background service worker용)
 const log = {
@@ -177,6 +178,27 @@ export async function handleMessage(
 
       case 'GENERATE_MOBILE_QUIZ_LINK':
         await handleGenerateMobileQuizLink(message, sendResponse);
+        break;
+
+      // 온라인 동기화 핸들러 (Phase 3)
+      case 'GET_SYNC_STATUS':
+        await handleGetSyncStatus(sendResponse);
+        break;
+
+      case 'SYNC_LOGIN':
+        await handleSyncLogin(sendResponse);
+        break;
+
+      case 'SYNC_LOGOUT':
+        await handleSyncLogout(sendResponse);
+        break;
+
+      case 'SYNC_NOW':
+        await handleSyncNow(sendResponse);
+        break;
+
+      case 'SYNC_RESET':
+        await handleSyncReset(sendResponse);
         break;
 
       // 백업/복원 관련 핸들러 (Phase 2-D)
@@ -873,17 +895,17 @@ async function handleGoogleSignOut(sendResponse: (response: MessageResponse) => 
  */
 async function handleGetCurrentUser(sendResponse: (response: MessageResponse) => void): Promise<void> {
   try {
-    const { getCurrentUser } = await import('./firebaseAuthService');
-    const user = await getCurrentUser();
+    // syncService의 사용자 정보를 사용 (chrome.storage.local에 저장되어 있음)
+    const status = syncService.getStatus();
 
-    if (user) {
+    if (status.currentUser) {
       sendResponse({
         success: true,
         data: {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
+          uid: status.currentUser.uid,
+          email: status.currentUser.email,
+          displayName: status.currentUser.displayName,
+          photoURL: status.currentUser.photoURL,
         },
       });
     } else {
@@ -921,6 +943,117 @@ async function handleSyncFromMobile(
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to sync from mobile',
+    });
+  }
+}
+
+/**
+ * Get sync status handler
+ */
+async function handleGetSyncStatus(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    log.error('Get sync status handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get sync status',
+    });
+  }
+}
+
+/**
+ * Sync login handler
+ */
+async function handleSyncLogin(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    await syncService.authenticate();
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    log.error('Sync login handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to login',
+    });
+  }
+}
+
+/**
+ * Sync logout handler
+ */
+async function handleSyncLogout(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    await syncService.signOut();
+
+    sendResponse({
+      success: true,
+      data: {
+        isAuthenticated: false,
+        currentUser: null,
+        lastSyncedAt: 0,
+        syncInProgress: false,
+      },
+    });
+  } catch (error) {
+    log.error('Sync logout handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to logout',
+    });
+  }
+}
+
+/**
+ * Sync now handler
+ */
+async function handleSyncNow(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    const syncResult = await syncService.sync();
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: {
+        ...status,
+        syncResult,
+      },
+    });
+  } catch (error) {
+    log.error('Sync now handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to sync',
+    });
+  }
+}
+
+/**
+ * Reset sync timestamp handler
+ */
+async function handleSyncReset(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    await syncService.resetLastSyncedAt();
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    log.error('Sync reset handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to reset sync timestamp',
     });
   }
 }

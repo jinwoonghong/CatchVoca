@@ -7,6 +7,7 @@ import { createWordRepository, createReviewStateRepository, eventBus, createInit
 import type { WordEntryInput } from '@catchvoca/types';
 import { lookupWord } from './dictionaryAPI';
 import { getDbInstance } from '../dbInstance';
+import { syncService } from './syncService';
 
 // Lazy initialization
 let wordRepository: ReturnType<typeof createWordRepository> | null = null;
@@ -92,7 +93,18 @@ export async function saveWord(wordData: Partial<WordEntryInput>): Promise<strin
 
   logger.info(`Word saved: ${wordId}`);
 
-  // 6. Content Script에 단어 저장 알림 (하이라이트 업데이트용)
+  // 6. 자동 동기화 트리거 (로그인 상태일 경우)
+  try {
+    const status = syncService.getStatus();
+    if (status.isAuthenticated) {
+      logger.info('Triggering debounced sync after word creation');
+      syncService.triggerDebouncedSync();
+    }
+  } catch (err) {
+    logger.debug('Failed to trigger sync', err);
+  }
+
+  // 7. Content Script에 단어 저장 알림 (하이라이트 업데이트용)
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]?.id) {
@@ -108,7 +120,7 @@ export async function saveWord(wordData: Partial<WordEntryInput>): Promise<strin
     logger.debug('Failed to notify content script', err);
   }
 
-  // 7. 사용자 알림
+  // 8. 사용자 알림
   chrome.notifications.create({
     type: 'basic',
     iconUrl: 'icons/icon48.png',

@@ -416,6 +416,9 @@ export interface Settings {
   wordReadingMode: {
     webpage: 'drag' | 'ctrl-drag' | 'alt-drag' | 'ctrl-click' | 'alt-click'; // 웹페이지 단어 읽기 모드
   };
+
+  // 동기화 설정 (Phase 3)
+  syncSettings: SyncSettings;
 }
 
 /**
@@ -454,6 +457,12 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   wordReadingMode: {
     webpage: 'ctrl-click', // 기본: Ctrl + 클릭
+  },
+  syncSettings: {
+    syncEnabled: false, // 기본: 비활성화 (안전한 배포)
+    autoSyncEnabled: true, // 자동 동기화 활성화
+    autoSyncInterval: 5, // 5분 간격
+    syncOnChanges: true, // 변경 시 자동 동기화
   },
 };
 
@@ -503,3 +512,48 @@ export type ReviewStateCreateDTO = Omit<ReviewState, 'id'>;
 export type ReviewStateUpdateDTO = Partial<
   Pick<ReviewState, 'nextReviewAt' | 'interval' | 'easeFactor' | 'repetitions' | 'history'>
 >;
+
+// ============================================================================
+// Online Sync Types (Phase 3)
+// ============================================================================
+
+/**
+ * 인증된 사용자 정보
+ */
+export interface AuthUser {
+  uid: string; // Firebase User ID
+  email: string; // 사용자 이메일
+  displayName: string; // 사용자 이름
+  photoURL?: string; // 프로필 사진 URL
+}
+
+/**
+ * 동기화 상태
+ */
+export interface SyncStatus {
+  isAuthenticated: boolean; // 인증 여부
+  currentUser: AuthUser | null; // 현재 사용자
+  lastSyncedAt: number; // 마지막 동기화 시각 (timestamp)
+  syncInProgress: boolean; // 동기화 진행 중
+}
+
+/**
+ * 동기화 결과
+ */
+export interface SyncResult {
+  success: boolean; // 성공 여부
+  timestamp: number; // 동기화 완료 시각
+  wordsSynced: number; // 동기화된 단어 수
+  reviewsSynced: number; // 동기화된 복습 상태 수
+  error?: string; // 에러 메시지 (실패 시)
+}
+
+/**
+ * 동기화 설정
+ */
+export interface SyncSettings {
+  syncEnabled: boolean; // 동기화 활성화
+  autoSyncEnabled: boolean; // 자동 동기화 활성화
+  autoSyncInterval: number; // 자동 동기화 간격 (분)
+  syncOnChanges: boolean; // 변경 시 자동 동기화
+}

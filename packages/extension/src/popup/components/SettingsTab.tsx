@@ -6,10 +6,14 @@
  */
 
 import { useState, useEffect } from 'react';
-import type { Settings } from '@catchvoca/types';
+import type { Settings, SyncStatus } from '@catchvoca/types';
 import { DEFAULT_SETTINGS } from '@catchvoca/types';
 
-export function SettingsTab() {
+interface SettingsTabProps {
+  onUserAuthChanged?: () => void;
+}
+
+export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -19,6 +23,13 @@ export function SettingsTab() {
   } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    isAuthenticated: false,
+    currentUser: null,
+    lastSyncedAt: 0,
+    syncInProgress: false,
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
 
   /**
    * 설정 로드
@@ -26,6 +37,7 @@ export function SettingsTab() {
   useEffect(() => {
     loadSettings();
     loadStorageInfo();
+    loadSyncStatus();
   }, []);
 
   const loadSettings = async () => {
@@ -53,6 +65,130 @@ export function SettingsTab() {
       }
     } catch (err) {
       console.error('[SettingsTab] Load storage info error:', err);
+    }
+  };
+
+  const loadSyncStatus = async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_SYNC_STATUS',
+      });
+
+      if (response.success) {
+        setSyncStatus(response.data);
+      }
+    } catch (err) {
+      console.error('[SettingsTab] Load sync status error:', err);
+    }
+  };
+
+  /**
+   * Google 로그인
+   */
+  const handleGoogleLogin = async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SYNC_LOGIN',
+      });
+
+      if (response.success) {
+        setSyncStatus(response.data);
+        alert(`✅ 로그인 성공!\n\n${response.data.currentUser?.email}`);
+
+        // Notify App component to update header
+        onUserAuthChanged?.();
+      } else {
+        alert(`로그인 실패: ${response.error}`);
+      }
+    } catch (err) {
+      alert('로그인 중 오류가 발생했습니다.');
+      console.error('[SettingsTab] Login error:', err);
+    }
+  };
+
+  /**
+   * 로그아웃
+   */
+  const handleLogout = async () => {
+    if (!confirm('로그아웃하시겠습니까?')) {
+      return;
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SYNC_LOGOUT',
+      });
+
+      if (response.success) {
+        setSyncStatus({
+          isAuthenticated: false,
+          currentUser: null,
+          lastSyncedAt: 0,
+          syncInProgress: false,
+        });
+        alert('로그아웃되었습니다.');
+
+        // Notify App component to update header
+        onUserAuthChanged?.();
+      } else {
+        alert(`로그아웃 실패: ${response.error}`);
+      }
+    } catch (err) {
+      alert('로그아웃 중 오류가 발생했습니다.');
+      console.error('[SettingsTab] Logout error:', err);
+    }
+  };
+
+  /**
+   * 수동 동기화
+   */
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SYNC_NOW',
+      });
+
+      if (response.success) {
+        setSyncStatus(response.data);
+        const result = response.syncResult;
+        alert(
+          `✅ 동기화 완료!\n\n단어: ${result.wordsSynced}개\n복습 상태: ${result.reviewsSynced}개`
+        );
+      } else {
+        alert(`동기화 실패: ${response.error}`);
+      }
+    } catch (err) {
+      alert('동기화 중 오류가 발생했습니다.');
+      console.error('[SettingsTab] Sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  /**
+   * 동기화 초기화 (전체 동기화 강제)
+   */
+  const handleResetSync = async () => {
+    if (!confirm('동기화를 초기화하시겠습니까?\n\n모든 로컬 데이터를 서버로 다시 전송합니다.')) {
+      return;
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SYNC_RESET',
+      });
+
+      if (response.success) {
+        setSyncStatus(response.data);
+        alert('✅ 동기화가 초기화되었습니다.\n\n"지금 동기화"를 눌러 전체 동기화를 시작하세요.');
+      } else {
+        alert(`초기화 실패: ${response.error}`);
+      }
+    } catch (err) {
+      alert('초기화 중 오류가 발생했습니다.');
+      console.error('[SettingsTab] Reset sync error:', err);
     }
   };
 
@@ -371,6 +507,131 @@ export function SettingsTab() {
           ✅ 설정이 저장되었습니다!
         </div>
       )}
+
+      {/* 온라인 동기화 */}
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900">온라인 동기화</h3>
+
+        {!syncStatus.isAuthenticated ? (
+          // 로그인되지 않은 상태
+          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+            <p className="text-sm text-gray-600 mb-3">
+              Google 계정으로 로그인하여 여러 기기에서 단어장을 동기화하세요.
+            </p>
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full py-2 px-4 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                />
+              </svg>
+              Google로 로그인
+            </button>
+          </div>
+        ) : (
+          // 로그인된 상태
+          <div className="space-y-3">
+            {/* 사용자 정보 */}
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {syncStatus.currentUser?.photoURL && (
+                    <img
+                      src={syncStatus.currentUser.photoURL}
+                      alt="Profile"
+                      className="w-10 h-10 rounded-full"
+                    />
+                  )}
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {syncStatus.currentUser?.displayName}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {syncStatus.currentUser?.email}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="text-sm text-gray-600 hover:text-gray-900"
+                >
+                  로그아웃
+                </button>
+              </div>
+            </div>
+
+            {/* 동기화 설정 */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  자동 동기화
+                </label>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {settings.syncSettings.autoSyncInterval}분마다 자동 동기화
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.syncSettings.syncEnabled}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      syncSettings: {
+                        ...settings.syncSettings,
+                        syncEnabled: e.target.checked,
+                      },
+                    })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* 마지막 동기화 시각 */}
+            {syncStatus.lastSyncedAt > 0 && (
+              <p className="text-xs text-gray-500 text-center">
+                마지막 동기화:{' '}
+                {new Date(syncStatus.lastSyncedAt).toLocaleString('ko-KR')}
+              </p>
+            )}
+
+            {/* 수동 동기화 버튼 */}
+            <button
+              onClick={handleManualSync}
+              disabled={isSyncing || syncStatus.syncInProgress}
+              className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              {isSyncing || syncStatus.syncInProgress ? '동기화 중...' : '지금 동기화'}
+            </button>
+
+            {/* 동기화 초기화 버튼 */}
+            <button
+              onClick={handleResetSync}
+              disabled={isSyncing || syncStatus.syncInProgress}
+              className="w-full py-2 px-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg hover:bg-yellow-200 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed"
+            >
+              동기화 초기화
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* 일반 설정 */}
       <div className="space-y-3">

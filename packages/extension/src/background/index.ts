@@ -6,6 +6,7 @@
 import type { WordEntryInput } from '@catchvoca/types';
 import { handleMessage } from './services/messageHandlers';
 import { saveWord } from './services/wordService';
+import { syncService } from './services/syncService';
 
 // Background Service Worker용 DB 인스턴스는 동적 로드 후 생성
 // (Dexie가 window를 참조하므로 모듈 로드 시점에 생성 불가)
@@ -46,6 +47,14 @@ async function ensureDbInitialized(): Promise<void> {
 // 컨텍스트 메뉴 생성
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureDbInitialized();
+
+  // Initialize sync service
+  try {
+    await syncService.initialize();
+    log.info('Sync service initialized');
+  } catch (error) {
+    log.error('Sync service initialization failed', error);
+  }
 
   chrome.contextMenus.create({
     id: 'catchvoca-save-word',
