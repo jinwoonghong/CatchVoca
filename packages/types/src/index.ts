@@ -231,29 +231,6 @@ export interface AIAnalysisHistory {
 }
 
 // ============================================================================
-// PDF Support Types
-// ============================================================================
-
-/**
- * PDF 페이지 정보
- */
-export interface PDFPageInfo {
-  pageNumber: number;
-  totalPages: number;
-  pdfUrl: string;
-  pdfTitle: string;
-}
-
-/**
- * PDF 텍스트 선택 정보
- */
-export interface PDFTextSelection {
-  text: string;
-  pageInfo: PDFPageInfo;
-  boundingRect: DOMRect;
-}
-
-// ============================================================================
 // Keyboard Shortcut Types
 // ============================================================================
 
@@ -433,13 +410,11 @@ export interface Settings {
   disableAIUsageLimit: boolean; // AI 사용량 제한 해제 (개발/테스트용)
 
   // 편의 기능 설정 (Phase 2-C)
-  pdfSupportEnabled: boolean; // PDF 지원 활성화
   keyboardSettings: KeyboardSettings; // 키보드 단축키 설정
 
   // 단어 읽기 모드 설정
   wordReadingMode: {
     webpage: 'drag' | 'ctrl-drag' | 'alt-drag' | 'ctrl-click' | 'alt-click'; // 웹페이지 단어 읽기 모드
-    pdf: 'drag' | 'ctrl-drag' | 'alt-drag' | 'ctrl-click' | 'alt-click'; // PDF 단어 읽기 모드
   };
 }
 
@@ -464,7 +439,6 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   geminiApiKey: undefined,
   disableAIUsageLimit: false,
-  pdfSupportEnabled: true,
   keyboardSettings: {
     quickLookup: {
       enabled: true,
@@ -480,7 +454,6 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   wordReadingMode: {
     webpage: 'ctrl-click', // 기본: Ctrl + 클릭
-    pdf: 'ctrl-drag', // PDF는 Ctrl+드래그 (clipboard 기반)
   },
 };
 

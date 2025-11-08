@@ -636,7 +636,7 @@ export function SettingsTab() {
 
           <div className="flex items-center justify-between">
             <a
-              href="https://ai.google.dev/"
+              href="https://aistudio.google.com/api-keys"
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-purple-600 hover:text-purple-700 font-medium"
