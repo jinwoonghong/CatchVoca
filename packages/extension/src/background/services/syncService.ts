@@ -184,6 +184,10 @@ class SyncService {
       const localReviews: ReviewState[] = this.lastSyncedAt > 0
         ? allReviews.filter(review => {
             // Check if review was updated since last sync
+            // ✅ history가 undefined일 수 있으므로 체크
+            if (!review.history || review.history.length === 0) {
+              return false;
+            }
             const lastHistory = review.history[review.history.length - 1];
             return lastHistory && lastHistory.reviewedAt > this.lastSyncedAt;
           })
@@ -345,8 +349,9 @@ class SyncService {
             reviewsApplied++;
           } else {
             // Compare last history entry timestamps
-            const serverLastHistory = serverReview.history[serverReview.history.length - 1];
-            const localLastHistory = localReview.history[localReview.history.length - 1];
+            // ✅ history가 undefined일 수 있으므로 체크
+            const serverLastHistory = serverReview.history?.[serverReview.history.length - 1];
+            const localLastHistory = localReview.history?.[localReview.history.length - 1];
 
             if (serverLastHistory && localLastHistory) {
               if (serverLastHistory.reviewedAt > localLastHistory.reviewedAt) {
@@ -486,6 +491,7 @@ class SyncService {
     return {
       isAuthenticated: !!this.authToken,
       currentUser: this.currentUser,
+      authToken: this.authToken,
       lastSyncedAt: this.lastSyncedAt,
       syncInProgress: this.syncInProgress,
     };
