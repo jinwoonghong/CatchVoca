@@ -421,26 +421,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
             </p>
           </div>
 
-          {/* PDF 읽기 모드 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              📑 PDF 단어 읽기
-            </label>
-            <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
-              <p className="text-sm font-medium text-gray-900 mb-2">
-                ⚡ 자동 복사 + 단축키 (고정)
-              </p>
-              <ol className="text-xs text-gray-700 space-y-1 list-decimal list-inside">
-                <li>PDF에서 단어를 <strong>드래그</strong>하여 선택</li>
-                <li><strong>Alt+C</strong>를 누르면 자동 복사 + 조회</li>
-                <li>팝업이 열리며 단어 뜻이 표시됩니다</li>
-              </ol>
-            </div>
-            <p className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-              ✨ 자동 복사 기능으로 Ctrl+C 단계가 생략됩니다!
-            </p>
-          </div>
-
           {/* 학습 단어 하이라이트 토글 키 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -496,18 +476,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
               <div className="flex items-center gap-2">
                 <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
                   Ctrl+Shift+Q
-                </kbd>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
-              <div>
-                <div className="font-medium text-gray-900">PDF 단어 조회</div>
-                <div className="text-sm text-gray-500">PDF에서 단어 자동 복사 + 조회</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
-                  Alt+C
                 </kbd>
               </div>
             </div>
