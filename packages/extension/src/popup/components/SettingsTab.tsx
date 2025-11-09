@@ -361,31 +361,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Pro 상태 (Free 버전 표시) */}
-      <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">무료 버전</h3>
-            <p className="text-sm text-gray-600 mt-1">
-              Local-First 방식으로 모든 기능을 무료로 이용할 수 있습니다
-            </p>
-          </div>
-          <svg
-            className="w-12 h-12 text-blue-600"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-            />
-          </svg>
-        </div>
-      </div>
+    <div className="space-y-6 pb-20">{/* pb-20: sticky 버튼을 위한 하단 패딩 */}
 
       {/* 저장 성공 메시지 */}
       {saveSuccess && (
@@ -1135,34 +1111,21 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         </div>
       </div>
 
-      {/* 정보 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">정보</h3>
-
-        <div className="p-3 bg-gray-50 rounded-md text-sm text-gray-600 space-y-1">
-          <div className="flex justify-between">
-            <span>버전</span>
-            <span className="font-medium text-gray-900">0.3.0</span>
-          </div>
-          <div className="flex justify-between">
-            <span>복습 알고리즘</span>
-            <span className="font-medium text-gray-900">SM-2</span>
-          </div>
-          <div className="flex justify-between">
-            <span>저장 방식</span>
-            <span className="font-medium text-gray-900">Local-First (IndexedDB)</span>
-          </div>
-        </div>
+      {/* 버전 정보 */}
+      <div className="text-center text-sm text-gray-500">
+        버전 0.3.0
       </div>
 
-      {/* 저장 버튼 */}
-      <button
-        onClick={handleSave}
-        disabled={isSaving}
-        className="w-full px-4 py-3 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium"
-      >
-        {isSaving ? '저장 중...' : '설정 저장'}
-      </button>
+      {/* Sticky 저장 버튼 */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="w-full px-4 py-3 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors"
+        >
+          {isSaving ? '저장 중...' : '설정 저장'}
+        </button>
+      </div>
     </div>
   );
 }

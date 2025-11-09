@@ -68,7 +68,6 @@ function App() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">CatchVoca</h1>
-            <p className="text-sm text-primary-100">Local-First 어휘 학습</p>
           </div>
 
           {/* User Status */}
