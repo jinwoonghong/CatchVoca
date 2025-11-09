@@ -370,150 +370,181 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         </div>
       )}
 
-      {/* 온라인 동기화 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">온라인 동기화</h3>
+      {/* ===== Section 1: 단축키 & 단어 읽기 방법 ===== */}
+      <div className="space-y-3 p-4 bg-gradient-to-br from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          ⌨️ 단축키 & 단어 읽기 방법
+        </h3>
+        <p className="text-sm text-gray-600">
+          가장 먼저 확인하세요! CatchVoca를 효율적으로 사용하는 방법입니다.
+        </p>
 
-        {!syncStatus.isAuthenticated ? (
-          // 로그인되지 않은 상태
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-            <p className="text-sm text-gray-600 mb-3">
-              Google 계정으로 로그인하여 여러 기기에서 단어장을 동기화하세요.
+        {/* 단어 읽기 모드 */}
+        <div className="p-4 bg-white border border-purple-200 rounded-md space-y-4">
+          <div>
+            <div className="text-sm font-semibold text-purple-900 mb-1">🖱️ 단어 읽기 모드</div>
+            <p className="text-sm text-purple-800">
+              웹페이지와 PDF에서 단어를 읽는 방법을 선택할 수 있습니다.
             </p>
-            <button
-              onClick={handleGoogleLogin}
-              className="w-full py-2 px-4 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+          </div>
+
+          {/* 웹페이지 읽기 모드 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📄 웹페이지 단어 읽기
+            </label>
+            <select
+              value={settings.wordReadingMode.webpage}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  wordReadingMode: {
+                    ...settings.wordReadingMode,
+                    webpage: e.target.value as any,
+                  },
+                })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              Google로 로그인
-            </button>
+              <option value="drag">마우스 드래그 (기본)</option>
+              <option value="ctrl-click">Ctrl + 클릭</option>
+              <option value="alt-click">Alt + 클릭</option>
+              <option value="ctrl-drag">Ctrl + 드래그</option>
+              <option value="alt-drag">Alt + 드래그</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500">
+              {settings.wordReadingMode.webpage === 'drag' && '단어를 드래그하여 선택'}
+              {settings.wordReadingMode.webpage === 'ctrl-click' && 'Ctrl 키를 누른 채 단어 클릭'}
+              {settings.wordReadingMode.webpage === 'alt-click' && 'Alt 키를 누른 채 단어 클릭하면 즉시 저장'}
+              {settings.wordReadingMode.webpage === 'ctrl-drag' && 'Ctrl 키를 누른 채 드래그'}
+              {settings.wordReadingMode.webpage === 'alt-drag' && 'Alt 키를 누른 채 드래그'}
+            </p>
           </div>
-        ) : (
-          // 로그인된 상태
+
+          {/* PDF 읽기 모드 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📑 PDF 단어 읽기
+            </label>
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+              <p className="text-sm font-medium text-gray-900 mb-2">
+                ⚡ 자동 복사 + 단축키 (고정)
+              </p>
+              <ol className="text-xs text-gray-700 space-y-1 list-decimal list-inside">
+                <li>PDF에서 단어를 <strong>드래그</strong>하여 선택</li>
+                <li><strong>Alt+C</strong>를 누르면 자동 복사 + 조회</li>
+                <li>팝업이 열리며 단어 뜻이 표시됩니다</li>
+              </ol>
+            </div>
+            <p className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+              ✨ 자동 복사 기능으로 Ctrl+C 단계가 생략됩니다!
+            </p>
+          </div>
+
+          {/* 학습 단어 하이라이트 토글 키 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              🔦 학습 단어 하이라이트 토글 키
+            </label>
+            <select
+              value={settings.keyboardSettings.toggleLearnedHighlight}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  keyboardSettings: {
+                    ...settings.keyboardSettings,
+                    toggleLearnedHighlight: e.target.value,
+                  },
+                })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="Shift">Shift</option>
+              <option value="Alt">Alt</option>
+              <option value="Control">Ctrl</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              선택한 키를 누르고 있는 동안만 학습 단어가 하이라이트됩니다 (녹색)
+            </p>
+          </div>
+        </div>
+
+        {/* 전역 단축키 */}
+        <div className="p-4 bg-white border border-blue-200 rounded-md">
+          <div className="text-sm text-blue-800 mb-3">
+            <strong>전역 단축키</strong>는 어떤 웹페이지에서든 작동합니다.
+          </div>
+
           <div className="space-y-3">
-            {/* 사용자 정보 */}
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {syncStatus.currentUser?.photoURL && (
-                    <img
-                      src={syncStatus.currentUser.photoURL}
-                      alt="Profile"
-                      className="w-10 h-10 rounded-full"
-                    />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {syncStatus.currentUser?.displayName}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      {syncStatus.currentUser?.email}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="text-sm text-gray-600 hover:text-gray-900"
-                >
-                  로그아웃
-                </button>
-              </div>
-            </div>
-
-            {/* 동기화 설정 */}
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
               <div>
-                <label className="text-sm font-medium text-gray-700">
-                  자동 동기화
-                </label>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {settings.syncSettings.autoSyncInterval}분마다 자동 동기화
-                </p>
+                <div className="font-medium text-gray-900">단어 저장</div>
+                <div className="text-sm text-gray-500">선택한 단어를 빠르게 저장</div>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.syncSettings.syncEnabled}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      syncSettings: {
-                        ...settings.syncSettings,
-                        syncEnabled: e.target.checked,
-                      },
-                    })
-                  }
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Ctrl+Shift+S
+                </kbd>
+              </div>
             </div>
 
-            {/* 마지막 동기화 시각 */}
-            {syncStatus.lastSyncedAt > 0 && (
-              <p className="text-xs text-gray-500 text-center">
-                마지막 동기화:{' '}
-                {new Date(syncStatus.lastSyncedAt).toLocaleString('ko-KR')}
-              </p>
-            )}
-
-            {/* 수동 동기화 버튼 */}
-            <div className="space-y-2">
-              <button
-                onClick={handleManualSync}
-                disabled={isSyncing || syncStatus.syncInProgress}
-                className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {isSyncing || syncStatus.syncInProgress ? '동기화 중...' : '지금 동기화'}
-              </button>
-              <p className="text-xs text-gray-500 text-center">
-                💡 변경된 데이터만 빠르게 동기화
-              </p>
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
+              <div>
+                <div className="font-medium text-gray-900">퀴즈 시작</div>
+                <div className="text-sm text-gray-500">퀴즈 모드 열기</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Ctrl+Shift+Q
+                </kbd>
+              </div>
             </div>
 
-            {/* 동기화 초기화 버튼 */}
-            <div className="space-y-2">
-              <button
-                onClick={handleResetSync}
-                disabled={isSyncing || syncStatus.syncInProgress}
-                className="w-full py-2 px-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg hover:bg-yellow-200 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                </svg>
-                동기화 초기화
-              </button>
-              <p className="text-xs text-gray-500 text-center">
-                ⚠️ 타임스탬프 리셋 후 전체 동기화 (문제 해결용)
-              </p>
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
+              <div>
+                <div className="font-medium text-gray-900">PDF 단어 조회</div>
+                <div className="text-sm text-gray-500">PDF에서 단어 자동 복사 + 조회</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Alt+C
+                </kbd>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
+              <div>
+                <div className="font-medium text-gray-900">팝업 열기</div>
+                <div className="text-sm text-gray-500">CatchVoca 팝업 열기</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
+                  Ctrl+Shift+V
+                </kbd>
+              </div>
             </div>
           </div>
-        )}
+
+          <button
+            onClick={() => {
+              chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+            }}
+            className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+          >
+            🔧 단축키 커스터마이징
+          </button>
+
+          <p className="mt-3 text-xs text-gray-500 text-center">
+            단축키는 Chrome 설정에서 변경할 수 있습니다
+          </p>
+        </div>
       </div>
 
-      {/* 일반 설정 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">일반 설정</h3>
+      {/* ===== Section 2: 일반 설정 ===== */}
+      <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          ⚙️ 일반 설정
+        </h3>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -555,9 +586,11 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         </div>
       </div>
 
-      {/* 학습 설정 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">학습 설정</h3>
+      {/* ===== Section 3: 학습 설정 ===== */}
+      <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          🎓 학습 설정
+        </h3>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -621,84 +654,11 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         </div>
       </div>
 
-      {/* UI 설정 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">UI 설정</h3>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            테마
-          </label>
-          <select
-            value={settings.theme}
-            onChange={(e) =>
-              setSettings({ ...settings, theme: e.target.value as 'light' | 'dark' | 'auto' })
-            }
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="light">라이트</option>
-            <option value="dark">다크</option>
-            <option value="auto">시스템 설정 따르기</option>
-          </select>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <div>
-            <label className="text-sm font-medium text-gray-700">컴팩트 모드</label>
-            <p className="text-xs text-gray-500">간결한 UI 사용</p>
-          </div>
-          <button
-            onClick={() =>
-              setSettings({ ...settings, compactMode: !settings.compactMode })
-            }
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              settings.compactMode ? 'bg-primary-600' : 'bg-gray-300'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                settings.compactMode ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* 키보드 단축키 설정 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">⌨️ 키보드 단축키</h3>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            학습 단어 하이라이트 토글 키
-          </label>
-          <select
-            value={settings.keyboardSettings.toggleLearnedHighlight}
-            onChange={(e) =>
-              setSettings({
-                ...settings,
-                keyboardSettings: {
-                  ...settings.keyboardSettings,
-                  toggleLearnedHighlight: e.target.value,
-                },
-              })
-            }
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="Shift">Shift</option>
-            <option value="Alt">Alt</option>
-            <option value="Control">Ctrl</option>
-          </select>
-          <p className="text-xs text-gray-500 mt-1">
-            선택한 키를 누르고 있는 동안만 학습 단어가 하이라이트됩니다 (녹색)
-          </p>
-        </div>
-      </div>
-
-
-      {/* AI 설정 (Phase 2-B) */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">AI 기능</h3>
+      {/* ===== Section 4: AI 기능 ===== */}
+      <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          🤖 AI 기능
+        </h3>
 
         {/* Gemini API Key 입력 */}
         <div className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-md space-y-3">
@@ -755,7 +715,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
           </p>
         </div>
 
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+        <div className="flex items-center justify-between p-3 bg-white rounded-md border border-gray-200">
           <div>
             <div className="font-medium text-gray-900">AI 분석 활성화</div>
             <div className="text-sm text-gray-500">웹페이지 단어 분석 및 추천</div>
@@ -779,7 +739,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
           </button>
         </div>
 
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+        <div className="flex items-center justify-between p-3 bg-white rounded-md border border-gray-200">
           <div>
             <div className="font-medium text-gray-900">단어 하이라이트</div>
             <div className="text-sm text-gray-500">학습 완료/추천 단어 표시</div>
@@ -898,149 +858,201 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         )}
       </div>
 
-      {/* 단축키 설정 - 통합된 섹션 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">⌨️ 단축키 설정</h3>
+      {/* ===== Section 5: 온라인 동기화 ===== */}
+      <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          🔐 온라인 동기화
+        </h3>
 
-        {/* 전역 단축키 */}
-        <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
-          <div className="text-sm text-blue-800 mb-3">
-            <strong>전역 단축키</strong>는 어떤 웹페이지에서든 작동합니다.
+        {!syncStatus.isAuthenticated ? (
+          // 로그인되지 않은 상태
+          <div className="p-4 bg-white border border-gray-200 rounded-lg">
+            <p className="text-sm text-gray-600 mb-3">
+              Google 계정으로 로그인하여 여러 기기에서 단어장을 동기화하세요.
+            </p>
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full py-2 px-4 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                />
+              </svg>
+              Google로 로그인
+            </button>
           </div>
-
+        ) : (
+          // 로그인된 상태
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-              <div>
-                <div className="font-medium text-gray-900">단어 저장</div>
-                <div className="text-sm text-gray-500">선택한 단어를 빠르게 저장</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
-                  Ctrl+Shift+S
-                </kbd>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-              <div>
-                <div className="font-medium text-gray-900">퀴즈 시작</div>
-                <div className="text-sm text-gray-500">퀴즈 모드 열기</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
-                  Ctrl+Shift+Q
-                </kbd>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
-              <div>
-                <div className="font-medium text-gray-900">PDF 단어 조회</div>
-                <div className="text-sm text-gray-500">PDF에서 단어 자동 복사 + 조회</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
-                  Alt+C
-                </kbd>
+            {/* 사용자 정보 */}
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {syncStatus.currentUser?.photoURL && (
+                    <img
+                      src={syncStatus.currentUser.photoURL}
+                      alt="Profile"
+                      className="w-10 h-10 rounded-full"
+                    />
+                  )}
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {syncStatus.currentUser?.displayName}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {syncStatus.currentUser?.email}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="text-sm text-gray-600 hover:text-gray-900"
+                >
+                  로그아웃
+                </button>
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-3 bg-white rounded border border-gray-200">
+            {/* 동기화 설정 */}
+            <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
               <div>
-                <div className="font-medium text-gray-900">팝업 열기</div>
-                <div className="text-sm text-gray-500">CatchVoca 팝업 열기</div>
+                <label className="text-sm font-medium text-gray-700">
+                  자동 동기화
+                </label>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {settings.syncSettings.autoSyncInterval}분마다 자동 동기화
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded text-sm font-mono">
-                  Ctrl+Shift+V
-                </kbd>
-              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.syncSettings.syncEnabled}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      syncSettings: {
+                        ...settings.syncSettings,
+                        syncEnabled: e.target.checked,
+                      },
+                    })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* 마지막 동기화 시각 */}
+            {syncStatus.lastSyncedAt > 0 && (
+              <p className="text-xs text-gray-500 text-center">
+                마지막 동기화:{' '}
+                {new Date(syncStatus.lastSyncedAt).toLocaleString('ko-KR')}
+              </p>
+            )}
+
+            {/* 수동 동기화 버튼 */}
+            <div className="space-y-2">
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing || syncStatus.syncInProgress}
+                className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {isSyncing || syncStatus.syncInProgress ? '동기화 중...' : '지금 동기화'}
+              </button>
+              <p className="text-xs text-gray-500 text-center">
+                💡 변경된 데이터만 빠르게 동기화
+              </p>
+            </div>
+
+            {/* 동기화 초기화 버튼 */}
+            <div className="space-y-2">
+              <button
+                onClick={handleResetSync}
+                disabled={isSyncing || syncStatus.syncInProgress}
+                className="w-full py-2 px-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg hover:bg-yellow-200 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                동기화 초기화
+              </button>
+              <p className="text-xs text-gray-500 text-center">
+                ⚠️ 타임스탬프 리셋 후 전체 동기화 (문제 해결용)
+              </p>
             </div>
           </div>
+        )}
+      </div>
 
-          <button
-            onClick={() => {
-              chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
-            }}
-            className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium"
+      {/* ===== Section 6: UI 설정 ===== */}
+      <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          🎨 UI 설정
+        </h3>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            테마
+          </label>
+          <select
+            value={settings.theme}
+            onChange={(e) =>
+              setSettings({ ...settings, theme: e.target.value as 'light' | 'dark' | 'auto' })
+            }
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
-            🔧 단축키 커스터마이징
-          </button>
-
-          <p className="mt-3 text-xs text-gray-500 text-center">
-            단축키는 Chrome 설정에서 변경할 수 있습니다
-          </p>
+            <option value="light">라이트</option>
+            <option value="dark">다크</option>
+            <option value="auto">시스템 설정 따르기</option>
+          </select>
         </div>
 
-        {/* 단어 읽기 모드 */}
-        <div className="p-4 bg-purple-50 border border-purple-200 rounded-md space-y-4">
+        <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-semibold text-purple-900 mb-1">🖱️ 단어 읽기 모드</div>
-            <p className="text-sm text-purple-800">
-              웹페이지와 PDF에서 단어를 읽는 방법을 선택할 수 있습니다.
-            </p>
+            <label className="text-sm font-medium text-gray-700">컴팩트 모드</label>
+            <p className="text-xs text-gray-500">간결한 UI 사용</p>
           </div>
-
-          {/* 웹페이지 읽기 모드 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              📄 웹페이지 단어 읽기
-            </label>
-            <select
-              value={settings.wordReadingMode.webpage}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  wordReadingMode: {
-                    ...settings.wordReadingMode,
-                    webpage: e.target.value as any,
-                  },
-                })
-              }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-            >
-              <option value="drag">마우스 드래그 (기본)</option>
-              <option value="ctrl-click">Ctrl + 클릭</option>
-              <option value="alt-click">Alt + 클릭</option>
-              <option value="ctrl-drag">Ctrl + 드래그</option>
-              <option value="alt-drag">Alt + 드래그</option>
-            </select>
-            <p className="mt-1 text-xs text-gray-500">
-              {settings.wordReadingMode.webpage === 'drag' && '단어를 드래그하여 선택'}
-              {settings.wordReadingMode.webpage === 'ctrl-click' && 'Ctrl 키를 누른 채 단어 클릭'}
-              {settings.wordReadingMode.webpage === 'alt-click' && 'Alt 키를 누른 채 단어 클릭하면 즉시 저장'}
-              {settings.wordReadingMode.webpage === 'ctrl-drag' && 'Ctrl 키를 누른 채 드래그'}
-              {settings.wordReadingMode.webpage === 'alt-drag' && 'Alt 키를 누른 채 드래그'}
-            </p>
-          </div>
-
-          {/* PDF 읽기 모드 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              📑 PDF 단어 읽기
-            </label>
-            <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
-              <p className="text-sm font-medium text-gray-900 mb-2">
-                ⚡ 자동 복사 + 단축키 (고정)
-              </p>
-              <ol className="text-xs text-gray-700 space-y-1 list-decimal list-inside">
-                <li>PDF에서 단어를 <strong>드래그</strong>하여 선택</li>
-                <li><strong>Alt+C</strong>를 누르면 자동 복사 + 조회</li>
-                <li>팝업이 열리며 단어 뜻이 표시됩니다</li>
-              </ol>
-            </div>
-            <p className="mt-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-              ✨ 자동 복사 기능으로 Ctrl+C 단계가 생략됩니다!
-            </p>
-          </div>
+          <button
+            onClick={() =>
+              setSettings({ ...settings, compactMode: !settings.compactMode })
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              settings.compactMode ? 'bg-primary-600' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                settings.compactMode ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
         </div>
       </div>
 
-      {/* 데이터 백업/복원 (Phase 2-D) */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">💾 데이터 백업/복원</h3>
+      {/* ===== Section 7: 데이터 백업/복원 ===== */}
+      <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+          💾 데이터 백업/복원
+        </h3>
 
-        <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+        <div className="p-4 bg-white border border-green-200 rounded-md">
           <p className="text-sm text-green-800 mb-4">
             단어장을 CSV 파일로 내보내거나, JSON 백업 파일을 복원할 수 있습니다.
           </p>
@@ -1111,9 +1123,11 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         </div>
       </div>
 
-      {/* 버전 정보 */}
-      <div className="text-center text-sm text-gray-500">
-        버전 0.3.0
+      {/* ===== Section 8: 버전 정보 ===== */}
+      <div className="text-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <p className="text-sm text-gray-500">
+          ℹ️ 버전 0.3.0
+        </p>
       </div>
 
       {/* Sticky 저장 버튼 */}
