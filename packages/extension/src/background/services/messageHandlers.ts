@@ -27,7 +27,7 @@ async function ensureRepositories() {
   }
   // After this call, repositories are guaranteed to be non-null
 }
-import type { Rating, Snapshot, GeminiAnalysisRequest } from '@catchvoca/types';
+import type { Rating, Snapshot, GeminiAnalysisRequest, WordEntry } from '@catchvoca/types';
 import { lookupWord } from './dictionaryAPI';
 import { saveWord, getWordInfo, incrementWordViewCount } from './wordService';
 import { getSettings, updateSettings } from './storage';
@@ -309,9 +309,16 @@ async function handleStartReviewSession(message: any, sendResponse: (response: M
 }
 
 async function handleSubmitReview(message: any, sendResponse: (response: MessageResponse) => void) {
-  await ensureRepositories();
-  const reviewState = await reviewStateRepository!.findByWordId(message.wordId);
-  if (reviewState) {
+  try {
+    await ensureRepositories();
+    const reviewState = await reviewStateRepository!.findByWordId(message.wordId);
+
+    if (!reviewState) {
+      log.warn('ReviewState not found for wordId:', message.wordId);
+      sendResponse({ success: false, error: 'ReviewState를 찾을 수 없습니다.' });
+      return;
+    }
+
     const rating: Rating = message.rating;
 
     const sm2Result = calculateNextReview(
@@ -337,8 +344,15 @@ async function handleSubmitReview(message: any, sendResponse: (response: Message
       rating,
       interval: sm2Result.interval,
     });
+
+    sendResponse({ success: true });
+  } catch (error) {
+    log.error('Submit review error:', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : '평가 제출 중 오류가 발생했습니다.'
+    });
   }
-  sendResponse({ success: true });
 }
 
 async function handleGetSettings(sendResponse: (response: MessageResponse) => void) {
@@ -754,22 +768,25 @@ async function handleGenerateMobileQuizLink(
 ): Promise<void> {
   try {
     await ensureRepositories();
-    // 모든 단어 조회
-    const allWords = await wordRepository!.findAll();
 
-    // 삭제된 단어 제외
-    const activeWords = allWords.filter((word) => !word.deletedAt);
+    // PC 퀴즈와 동일하게 복습 대상 단어만 가져오기
+    const dueReviews = await reviewStateRepository!.findDueReviews(20); // 최대 20개
+    const dueWords = await Promise.all(
+      dueReviews.map((review) => wordRepository!.findById(review.wordId))
+    );
+    // 타입 안전성: null 체크 후 WordEntry 배열로 변환
+    const validDueWords = dueWords.filter((w): w is WordEntry => w !== null);
 
-    if (activeWords.length === 0) {
+    if (validDueWords.length === 0) {
       sendResponse({
         success: false,
-        error: '저장된 단어가 없습니다.',
+        error: '복습할 단어가 없습니다.',
       });
       return;
     }
 
     // Firebase에 업로드
-    const result = await uploadQuizToFirebase(activeWords);
+    const result = await uploadQuizToFirebase(validDueWords);
 
     sendResponse({
       success: true,
