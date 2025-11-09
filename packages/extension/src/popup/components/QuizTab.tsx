@@ -37,10 +37,11 @@ export function QuizTab({ onSwitchToSettings }: QuizTabProps) {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
 
   /**
-   * 복습 통계 로드
+   * 복습 통계 로드 및 모바일 퀴즈 자동 동기화
    */
   useEffect(() => {
     loadStats();
+    autoSyncMobileQuiz(); // 자동 동기화
   }, []);
 
   const loadStats = async () => {
@@ -54,6 +55,53 @@ export function QuizTab({ onSwitchToSettings }: QuizTabProps) {
       }
     } catch (err) {
       console.error('[QuizTab] Load stats error:', err);
+    }
+  };
+
+  /**
+   * 모바일 퀴즈 자동 동기화 (탭 열릴 때)
+   */
+  const autoSyncMobileQuiz = async () => {
+    try {
+      const storage = await chrome.storage.local.get('lastMobileQuizId');
+      const quizId = storage.lastMobileQuizId;
+
+      console.log('[QuizTab] Checking for mobile quiz sync...', { quizId, hasQuizId: !!quizId });
+
+      if (!quizId) {
+        console.log('[QuizTab] No mobile quiz ID found, skipping auto-sync');
+        return;
+      }
+
+      console.log('[QuizTab] Auto-syncing mobile quiz:', quizId);
+      const response = await chrome.runtime.sendMessage({
+        type: 'SYNC_FROM_MOBILE',
+        quizId,
+      });
+
+      console.log('[QuizTab] Sync response:', response);
+
+      if (response.success) {
+        const syncedCount = response.data?.syncedCount || 0;
+        console.log(`[QuizTab] Auto-sync completed: ${syncedCount} words synced`);
+
+        // ✅ 동기화 성공 후 quizId 삭제 (중복 동기화 방지)
+        await chrome.storage.local.remove('lastMobileQuizId');
+        console.log('[QuizTab] Removed lastMobileQuizId after successful sync');
+
+        if (syncedCount > 0) {
+          // 통계 새로고침
+          await loadStats();
+          alert(`✅ 모바일 학습 결과 동기화 완료!\n\n${syncedCount}개 단어의 학습 기록이 업데이트되었습니다.`);
+        } else {
+          console.log('[QuizTab] No new data to sync from mobile');
+        }
+      } else {
+        console.error('[QuizTab] Sync failed:', response.error);
+      }
+    } catch (err) {
+      console.error('[QuizTab] Auto-sync error:', err);
+      // 자동 동기화 실패는 조용히 처리 (사용자 방해 안 함)
     }
   };
 
@@ -176,10 +224,30 @@ export function QuizTab({ onSwitchToSettings }: QuizTabProps) {
       const response = await chrome.runtime.sendMessage({ type: 'GENERATE_MOBILE_QUIZ_LINK' });
 
       if (response.success && response.data) {
-        const { url, expiresAt } = response.data;
+        const { url, expiresAt, quizId } = response.data;
         setMobileUrl(url);
 
-        // 2. QR 코드 생성
+        // quizId를 chrome.storage에 저장 (나중에 동기화용)
+        if (quizId) {
+          try {
+            await chrome.storage.local.set({ lastMobileQuizId: quizId });
+            console.log('[QuizTab] Saved quizId for later sync:', quizId);
+          } catch (storageErr) {
+            console.error('[QuizTab] Failed to save quizId:', storageErr);
+          }
+        }
+
+        // 2. 클립보드에 URL 자동 복사
+        let clipboardSuccess = true;
+        try {
+          await navigator.clipboard.writeText(url);
+          console.log('[QuizTab] URL copied to clipboard:', url);
+        } catch (copyErr) {
+          console.error('[QuizTab] Failed to copy URL to clipboard:', copyErr);
+          clipboardSuccess = false;
+        }
+
+        // 3. QR 코드 생성
         try {
           const qrDataUrl = await QRCode.toDataURL(url, {
             width: 200,
@@ -195,14 +263,18 @@ export function QuizTab({ onSwitchToSettings }: QuizTabProps) {
           alert('⚠️ QR 코드 생성에 실패했습니다.\nURL을 직접 복사해서 사용해주세요.');
         }
 
-        // 3. 성공 메시지
+        // 4. 성공 메시지
         const expirationDate = new Date(expiresAt);
         const expirationStr = `${expirationDate.getMonth() + 1}/${expirationDate.getDate()} ${expirationDate.getHours()}:${expirationDate.getMinutes().toString().padStart(2, '0')}`;
+
+        const clipboardMsg = clipboardSuccess
+          ? `🔗 링크가 자동으로 복사되었습니다.\n\n`
+          : `⚠️ 클립보드 복사에 실패했습니다.\n💡 QR 코드 아래 링크를 직접 복사하세요.\n\n`;
 
         alert(
           `✅ 모바일 퀴즈가 생성되었습니다!\n\n` +
           `📱 만료일시: ${expirationStr}\n` +
-          `🔗 링크가 자동으로 복사되었습니다.\n\n` +
+          clipboardMsg +
           `💡 QR 코드를 스캔하거나 링크를 공유하세요!`
         );
       } else {
