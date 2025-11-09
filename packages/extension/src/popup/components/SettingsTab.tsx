@@ -370,6 +370,145 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         </div>
       )}
 
+      {/* ===== Google 로그인 (최상단) ===== */}
+      <div className="space-y-3">
+        {!syncStatus.isAuthenticated ? (
+          // 로그인되지 않은 상태
+          <div className="p-4 bg-white border border-gray-200 rounded-lg">
+            <p className="text-sm text-gray-600 mb-3">
+              Google 계정으로 로그인하여 여러 기기에서 단어장을 동기화하세요.
+            </p>
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full py-2 px-4 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                />
+              </svg>
+              Google로 로그인
+            </button>
+          </div>
+        ) : (
+          // 로그인된 상태
+          <div className="space-y-3">
+            {/* 사용자 정보 */}
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {syncStatus.currentUser?.photoURL && (
+                    <img
+                      src={syncStatus.currentUser.photoURL}
+                      alt="Profile"
+                      className="w-10 h-10 rounded-full"
+                    />
+                  )}
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {syncStatus.currentUser?.displayName}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {syncStatus.currentUser?.email}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="text-sm text-gray-600 hover:text-gray-900"
+                >
+                  로그아웃
+                </button>
+              </div>
+            </div>
+
+            {/* 동기화 설정 */}
+            <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+              <div>
+                <label className="text-sm font-medium text-gray-700">
+                  자동 동기화
+                </label>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {settings.syncSettings.autoSyncInterval}분마다 자동 동기화
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.syncSettings.syncEnabled}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      syncSettings: {
+                        ...settings.syncSettings,
+                        syncEnabled: e.target.checked,
+                      },
+                    })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* 마지막 동기화 시각 */}
+            {syncStatus.lastSyncedAt > 0 && (
+              <p className="text-xs text-gray-500 text-center">
+                마지막 동기화:{' '}
+                {new Date(syncStatus.lastSyncedAt).toLocaleString('ko-KR')}
+              </p>
+            )}
+
+            {/* 수동 동기화 버튼 */}
+            <div className="space-y-2">
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing || syncStatus.syncInProgress}
+                className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {isSyncing || syncStatus.syncInProgress ? '동기화 중...' : '지금 동기화'}
+              </button>
+              <p className="text-xs text-gray-500 text-center">
+                💡 변경된 데이터만 빠르게 동기화
+              </p>
+            </div>
+
+            {/* 동기화 초기화 버튼 */}
+            <div className="space-y-2">
+              <button
+                onClick={handleResetSync}
+                disabled={isSyncing || syncStatus.syncInProgress}
+                className="w-full py-2 px-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg hover:bg-yellow-200 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                동기화 초기화
+              </button>
+              <p className="text-xs text-gray-500 text-center">
+                ⚠️ 타임스탬프 리셋 후 전체 동기화 (문제 해결용)
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ===== Section 1: 단축키 & 단어 읽기 방법 ===== */}
       <div className="space-y-3 p-4 bg-gradient-to-br from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg">
         <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -821,145 +960,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
                   }`}
                 />
               </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ===== Section 5: 온라인 동기화 ===== */}
-      <div className="space-y-3">
-        {!syncStatus.isAuthenticated ? (
-          // 로그인되지 않은 상태
-          <div className="p-4 bg-white border border-gray-200 rounded-lg">
-            <p className="text-sm text-gray-600 mb-3">
-              Google 계정으로 로그인하여 여러 기기에서 단어장을 동기화하세요.
-            </p>
-            <button
-              onClick={handleGoogleLogin}
-              className="w-full py-2 px-4 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
-              Google로 로그인
-            </button>
-          </div>
-        ) : (
-          // 로그인된 상태
-          <div className="space-y-3">
-            {/* 사용자 정보 */}
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {syncStatus.currentUser?.photoURL && (
-                    <img
-                      src={syncStatus.currentUser.photoURL}
-                      alt="Profile"
-                      className="w-10 h-10 rounded-full"
-                    />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {syncStatus.currentUser?.displayName}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      {syncStatus.currentUser?.email}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="text-sm text-gray-600 hover:text-gray-900"
-                >
-                  로그아웃
-                </button>
-              </div>
-            </div>
-
-            {/* 동기화 설정 */}
-            <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
-              <div>
-                <label className="text-sm font-medium text-gray-700">
-                  자동 동기화
-                </label>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {settings.syncSettings.autoSyncInterval}분마다 자동 동기화
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.syncSettings.syncEnabled}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      syncSettings: {
-                        ...settings.syncSettings,
-                        syncEnabled: e.target.checked,
-                      },
-                    })
-                  }
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
-            </div>
-
-            {/* 마지막 동기화 시각 */}
-            {syncStatus.lastSyncedAt > 0 && (
-              <p className="text-xs text-gray-500 text-center">
-                마지막 동기화:{' '}
-                {new Date(syncStatus.lastSyncedAt).toLocaleString('ko-KR')}
-              </p>
-            )}
-
-            {/* 수동 동기화 버튼 */}
-            <div className="space-y-2">
-              <button
-                onClick={handleManualSync}
-                disabled={isSyncing || syncStatus.syncInProgress}
-                className="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {isSyncing || syncStatus.syncInProgress ? '동기화 중...' : '지금 동기화'}
-              </button>
-              <p className="text-xs text-gray-500 text-center">
-                💡 변경된 데이터만 빠르게 동기화
-              </p>
-            </div>
-
-            {/* 동기화 초기화 버튼 */}
-            <div className="space-y-2">
-              <button
-                onClick={handleResetSync}
-                disabled={isSyncing || syncStatus.syncInProgress}
-                className="w-full py-2 px-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg hover:bg-yellow-200 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                </svg>
-                동기화 초기화
-              </button>
-              <p className="text-xs text-gray-500 text-center">
-                ⚠️ 타임스탬프 리셋 후 전체 동기화 (문제 해결용)
-              </p>
             </div>
           </div>
         )}
