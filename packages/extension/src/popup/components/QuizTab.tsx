@@ -487,7 +487,23 @@ export function QuizTab({ onSwitchToSettings }: QuizTabProps) {
         <div className="text-center mb-6">
           <h2 className="text-3xl font-bold text-gray-900">{currentWord.word}</h2>
           {currentWord.phonetic && (
-            <p className="text-sm text-gray-500 mt-2">{currentWord.phonetic}</p>
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <span className="text-sm text-gray-500">[{currentWord.phonetic}]</span>
+              {currentWord.audioUrl && (
+                <button
+                  onClick={() => {
+                    const audio = new Audio(currentWord.audioUrl);
+                    audio.play().catch((err) => {
+                      console.error('[QuizTab] Audio play error:', err);
+                    });
+                  }}
+                  className="text-gray-600 hover:text-primary-600"
+                  title="발음 듣기"
+                >
+                  🔊
+                </button>
+              )}
+            </div>
           )}
         </div>
 
