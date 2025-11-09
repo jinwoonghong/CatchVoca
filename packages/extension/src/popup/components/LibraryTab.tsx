@@ -618,8 +618,8 @@ export function LibraryTab() {
                     )}
                     {/* 조회수 표시 */}
                     {word.viewCount !== undefined && word.viewCount > 0 && (
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                        👁️ {word.viewCount}회
+                      <span className="text-xs text-gray-700 bg-gray-100 px-2 py-1 rounded">
+                        조회 {word.viewCount}회
                       </span>
                     )}
                   </div>
