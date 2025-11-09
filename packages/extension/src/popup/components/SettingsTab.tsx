@@ -17,10 +17,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [storageInfo, setStorageInfo] = useState<{
-    wordCount: number;
-    storageUsed: string;
-  } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
@@ -37,7 +33,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
    */
   useEffect(() => {
     loadSettings();
-    loadStorageInfo();
     loadSyncStatus();
   }, []);
 
@@ -55,19 +50,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
     }
   };
 
-  const loadStorageInfo = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'GET_STORAGE_INFO',
-      });
-
-      if (response.success) {
-        setStorageInfo(response.data);
-      }
-    } catch (err) {
-      console.error('[SettingsTab] Load storage info error:', err);
-    }
-  };
 
   const loadSyncStatus = async () => {
     try {
@@ -221,103 +203,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
     }
   };
 
-  /**
-   * 데이터 내보내기
-   */
-  const handleExport = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'EXPORT_DATA',
-      });
-
-      if (response.success) {
-        const dataStr = JSON.stringify(response.data, null, 2);
-        const blob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `catchvoca-backup-${Date.now()}.json`;
-        link.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch (err) {
-      alert('데이터 내보내기 중 오류가 발생했습니다.');
-      console.error('[SettingsTab] Export error:', err);
-    }
-  };
-
-  /**
-   * 데이터 가져오기
-   */
-  const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/json';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-
-        const response = await chrome.runtime.sendMessage({
-          type: 'IMPORT_DATA',
-          data,
-        });
-
-        if (response.success) {
-          const stats = response.data;
-          const message = `✅ 데이터 가져오기 완료!\n\n` +
-            `📥 가져온 항목:\n` +
-            `  • 단어: ${stats.importedWords}개\n` +
-            `  • 복습 상태: ${stats.importedReviews}개\n\n` +
-            `⏭️ 건너뛴 항목:\n` +
-            `  • 단어: ${stats.skippedWords}개 (기존 데이터가 더 최신)\n` +
-            `  • 복습 상태: ${stats.skippedReviews}개\n\n` +
-            `📊 전체: ${stats.totalWords}개 단어, ${stats.totalReviews}개 복습 상태`;
-
-          alert(message);
-          loadStorageInfo();
-        } else {
-          const errorMsg = response.error || '데이터 가져오기에 실패했습니다.';
-          const details = response.details
-            ? '\n\n오류 상세:\n' + response.details.map((d: any) => `  • ${d.field}: ${d.message}`).join('\n')
-            : '';
-          alert(errorMsg + details);
-        }
-      } catch (err) {
-        alert('❌ 잘못된 파일 형식입니다.\n\nCatchVoca 백업 파일(.json)을 선택해주세요.');
-        console.error('[SettingsTab] Import error:', err);
-      }
-    };
-    input.click();
-  };
-
-  /**
-   * 모든 데이터 삭제
-   */
-  const handleClearAll = async () => {
-    if (!confirm('정말로 모든 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-      return;
-    }
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'CLEAR_ALL_DATA',
-      });
-
-      if (response.success) {
-        alert('모든 데이터가 삭제되었습니다.');
-        loadStorageInfo();
-      } else {
-        alert('데이터 삭제에 실패했습니다.');
-      }
-    } catch (err) {
-      alert('데이터 삭제 중 오류가 발생했습니다.');
-      console.error('[SettingsTab] Clear all error:', err);
-    }
-  };
 
   /**
    * CSV 형식으로 변환
@@ -453,7 +338,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
             alert(
               `가져오기 완료!\n\n가져온 단어: ${result.importedWords}개\n가져온 복습 상태: ${result.importedReviewStates}개\n건너뛴 단어: ${result.skippedWords}개`
             );
-            loadStorageInfo(); // 스토리지 정보 갱신
           } else {
             alert(`가져오기 실패: ${response.error}`);
           }
@@ -835,45 +719,6 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         </div>
       </div>
 
-      {/* 데이터 관리 */}
-      <div className="space-y-3">
-        <h3 className="text-lg font-semibold text-gray-900">데이터 관리</h3>
-
-        {storageInfo && (
-          <div className="p-3 bg-gray-50 rounded-md">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">저장된 단어</span>
-              <span className="font-medium text-gray-900">{storageInfo.wordCount}개</span>
-            </div>
-            <div className="flex justify-between text-sm mt-1">
-              <span className="text-gray-600">사용 중인 저장 공간</span>
-              <span className="font-medium text-gray-900">{storageInfo.storageUsed}</span>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-          >
-            📤 내보내기
-          </button>
-          <button
-            onClick={handleImport}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
-          >
-            📥 가져오기
-          </button>
-        </div>
-
-        <button
-          onClick={handleClearAll}
-          className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
-        >
-          🗑️ 모든 데이터 삭제
-        </button>
-      </div>
 
       {/* AI 설정 (Phase 2-B) */}
       <div className="space-y-3">
