@@ -827,11 +827,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
       </div>
 
       {/* ===== Section 5: 온라인 동기화 ===== */}
-      <div className="space-y-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          🔐 온라인 동기화
-        </h3>
-
+      <div className="space-y-3">
         {!syncStatus.isAuthenticated ? (
           // 로그인되지 않은 상태
           <div className="p-4 bg-white border border-gray-200 rounded-lg">
