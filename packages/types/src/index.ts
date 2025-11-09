@@ -533,6 +533,7 @@ export interface AuthUser {
 export interface SyncStatus {
   isAuthenticated: boolean; // 인증 여부
   currentUser: AuthUser | null; // 현재 사용자
+  authToken: string | null; // Firebase Custom Token
   lastSyncedAt: number; // 마지막 동기화 시각 (timestamp)
   syncInProgress: boolean; // 동기화 진행 중
 }

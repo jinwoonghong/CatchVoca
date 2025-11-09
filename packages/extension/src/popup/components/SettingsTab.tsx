@@ -26,6 +26,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isAuthenticated: false,
     currentUser: null,
+    authToken: null,
     lastSyncedAt: 0,
     syncInProgress: false,
   });
@@ -123,6 +124,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
         setSyncStatus({
           isAuthenticated: false,
           currentUser: null,
+          authToken: null,
           lastSyncedAt: 0,
           syncInProgress: false,
         });
