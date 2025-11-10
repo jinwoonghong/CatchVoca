@@ -552,11 +552,11 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
               <option value="alt-drag">Alt + 드래그</option>
             </select>
             <p className="mt-1 text-xs text-gray-500">
-              {settings.wordReadingMode.webpage === 'drag' && '단어를 드래그하여 선택'}
-              {settings.wordReadingMode.webpage === 'ctrl-click' && 'Ctrl 키를 누른 채 단어 클릭'}
-              {settings.wordReadingMode.webpage === 'alt-click' && 'Alt 키를 누른 채 단어 클릭하면 즉시 저장'}
-              {settings.wordReadingMode.webpage === 'ctrl-drag' && 'Ctrl 키를 누른 채 드래그'}
-              {settings.wordReadingMode.webpage === 'alt-drag' && 'Alt 키를 누른 채 드래그'}
+              {settings.wordReadingMode.webpage === 'drag' && '단어를 드래그하여 선택하면 툴팁 표시'}
+              {settings.wordReadingMode.webpage === 'ctrl-click' && 'Ctrl 키를 누른 채 단어 클릭하면 툴팁 표시'}
+              {settings.wordReadingMode.webpage === 'alt-click' && 'Alt 키를 누른 채 단어 클릭하면 툴팁 표시'}
+              {settings.wordReadingMode.webpage === 'ctrl-drag' && 'Ctrl 키를 누른 채 드래그하면 툴팁 표시'}
+              {settings.wordReadingMode.webpage === 'alt-drag' && 'Alt 키를 누른 채 드래그하면 툴팁 표시'}
             </p>
           </div>
 

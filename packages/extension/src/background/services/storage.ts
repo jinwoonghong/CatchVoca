@@ -55,6 +55,25 @@ export async function updateSettings(settings: Partial<Settings>): Promise<void>
     });
 
     logger.info('Settings updated');
+
+    // Content script에 설정 변경 알림
+    try {
+      const tabs = await chrome.tabs.query({ status: 'complete' });
+      for (const tab of tabs) {
+        if (tab.id) {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'UPDATE_HIGHLIGHT_SETTINGS',
+            settings: updatedSettings.highlightSettings,
+            keyboardSettings: updatedSettings.keyboardSettings,
+          }).catch(() => {
+            // Content script가 로드되지 않은 탭은 무시
+          });
+        }
+      }
+    } catch (notifyError) {
+      // 알림 실패는 무시 (치명적이지 않음)
+      logger.warn('Failed to notify content scripts of settings update', notifyError);
+    }
   } catch (error) {
     logger.error('Failed to update settings', error);
     throw error;
