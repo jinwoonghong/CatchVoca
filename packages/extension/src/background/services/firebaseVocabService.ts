@@ -1,6 +1,10 @@
 /**
  * Firebase Vocabulary Synchronization Service
  * PC에서 전체 단어장을 Firebase에 동기화
+ *
+ * @deprecated 현재 사용되지 않음 - syncService.ts가 동기화 담당
+ * @note 향후 Mobile PWA나 별도 관리 도구에서 사용 가능성 있음
+ * @todo 필요시 syncService와 통합 고려
  */
 
 import { initializeApp } from 'firebase/app';

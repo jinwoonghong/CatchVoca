@@ -179,41 +179,6 @@ async function getProStatus(): Promise<ProStatus> {
 }
 
 /**
- * Pro 상태 설정 (테스트 또는 구독 연동용)
- */
-export async function setProStatus(status: ProStatus): Promise<void> {
-  try {
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.PRO_STATUS]: status,
-    });
-
-    logger.info('Pro status updated', status);
-  } catch (error) {
-    logger.error('Failed to set Pro status', error);
-  }
-}
-
-/**
- * AI 사용량 초기화 (테스트용)
- */
-export async function resetAIUsage(): Promise<void> {
-  try {
-    const newUsage: AIUsage = {
-      date: getTodayDate(),
-      count: 0,
-    };
-
-    await chrome.storage.local.set({
-      [STORAGE_KEYS.AI_USAGE]: newUsage,
-    });
-
-    logger.info('AI usage reset');
-  } catch (error) {
-    logger.error('Failed to reset AI usage', error);
-  }
-}
-
-/**
  * AI 사용량 통계 조회
  */
 export async function getAIUsageStats(): Promise<{

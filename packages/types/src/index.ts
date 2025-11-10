@@ -558,3 +558,22 @@ export interface SyncSettings {
   autoSyncInterval: number; // 자동 동기화 간격 (분)
   syncOnChanges: boolean; // 변경 시 자동 동기화
 }
+
+// ============================================================================
+// Export Types
+// ============================================================================
+
+/**
+ * 내보내기 형식
+ */
+export type ExportFormat = 'csv' | 'anki' | 'quizlet';
+
+/**
+ * 내보내기 옵션
+ */
+export interface ExportOptions {
+  format: ExportFormat;
+  includePhonetic?: boolean; // 발음 기호 포함 여부
+  includeContext?: boolean; // 예문 포함 여부
+  includeTags?: boolean; // 태그 포함 여부
+}

@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import type { Settings, SyncStatus } from '@catchvoca/types';
+import type { Settings, SyncStatus, ExportFormat, WordEntry } from '@catchvoca/types';
 import { DEFAULT_SETTINGS } from '@catchvoca/types';
 
 interface SettingsTabProps {
@@ -18,6 +18,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('csv');
   const [isImporting, setIsImporting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isAuthenticated: false,
@@ -243,13 +244,68 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
   };
 
   /**
-   * 데이터 내보내기 (CSV 형식)
+   * Anki 형식으로 변환 (TSV)
+   */
+  const convertToAnki = (words: WordEntry[]): string => {
+    // Anki 헤더 (탭으로 구분)
+    const headers = ['앞면', '뒷면', '태그'];
+
+    // Anki 행 생성
+    const rows = words.map(word => {
+      // 앞면: 영어 단어
+      const front = word.word || '';
+
+      // 뒷면: 정의 + 발음 + 예문
+      const definitions = (word.definitions || []).join('; ');
+      const phonetic = word.phonetic ? ` [${word.phonetic}]` : '';
+      const context = word.context ? `<br><br>예문: ${word.context}` : '';
+      const back = definitions + phonetic + context;
+
+      // 태그
+      const tags = word.tags && word.tags.length > 0
+        ? word.tags.join(',')
+        : 'english,catchvoca';
+
+      return [front, back, tags].join('\t');
+    });
+
+    // BOM 추가 (UTF-8 인식을 위해)
+    return '\uFEFF' + [headers.join('\t'), ...rows].join('\n');
+  };
+
+  /**
+   * Quizlet 형식으로 변환 (TSV)
+   */
+  const convertToQuizlet = (words: WordEntry[]): string => {
+    // Quizlet는 헤더 없이 바로 내용
+    const rows = words.map(word => {
+      // Term: 영어 단어
+      const term = word.word || '';
+
+      // Definition: 정의만 (발음과 예문은 제외)
+      const definition = (word.definitions || []).join('; ');
+
+      return [term, definition].join('\t');
+    });
+
+    return rows.join('\n');
+  };
+
+  /**
+   * 데이터 내보내기 (다중 형식 지원)
    */
   const handleExportData = async () => {
+    // 형식별 메시지
+    const formatNames = {
+      csv: 'CSV (엑셀)',
+      anki: 'Anki 덱',
+      quizlet: 'Quizlet 세트'
+    };
+
     // TODO: Pro 기능 - 광고 팝업 표시
     // 현재는 일반 확인 팝업으로 대체
     const confirmed = confirm(
-      '단어장을 CSV 파일로 내보내시겠습니까?\n\n' +
+      `단어장을 ${formatNames[exportFormat]} 파일로 내보내시겠습니까?\n\n` +
       '💡 Pro 버전에서는 광고 없이 즉시 다운로드됩니다.'
     );
 
@@ -270,22 +326,43 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
           return;
         }
 
-        // CSV 변환
-        const csvContent = convertToCSV(words);
+        // 형식에 따라 변환
+        let content: string;
+        let filename: string;
+        let mimeType: string;
+        const date = new Date().toISOString().split('T')[0];
+
+        switch (exportFormat) {
+          case 'anki':
+            content = convertToAnki(words);
+            filename = `catchvoca-anki-deck-${date}.txt`;
+            mimeType = 'text/plain;charset=utf-8';
+            break;
+          case 'quizlet':
+            content = convertToQuizlet(words);
+            filename = `catchvoca-quizlet-set-${date}.txt`;
+            mimeType = 'text/plain;charset=utf-8';
+            break;
+          case 'csv':
+          default:
+            content = convertToCSV(words);
+            filename = `catchvoca-단어장-${date}.csv`;
+            mimeType = 'text/csv;charset=utf-8';
+        }
 
         // Blob 생성 및 다운로드
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob([content], { type: mimeType });
         const url = URL.createObjectURL(blob);
 
         const a = document.createElement('a');
         a.href = url;
-        a.download = `catchvoca-단어장-${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        alert(`✅ CSV 내보내기 완료!\n\n단어 수: ${words.length}개`);
+        alert(`✅ ${formatNames[exportFormat]} 내보내기 완료!\n\n단어 수: ${words.length}개`);
       } else {
         alert(`내보내기 실패: ${response.error || '알 수 없는 오류'}`);
       }
@@ -1018,35 +1095,46 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
 
         <div className="p-4 bg-white border border-green-200 rounded-md">
           <p className="text-sm text-green-800 mb-4">
-            단어장을 CSV 파일로 내보내거나, JSON 백업 파일을 복원할 수 있습니다.
+            단어장을 다양한 형식으로 내보내거나, JSON 백업 파일을 복원할 수 있습니다.
           </p>
 
           <div className="space-y-3">
-            {/* 내보내기 */}
-            <button
-              onClick={handleExportData}
-              disabled={isExporting}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-md transition-colors font-medium ${
-                isExporting
-                  ? 'opacity-50 cursor-not-allowed'
-                  : 'hover:bg-green-700'
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            {/* 내보내기 형식 선택 및 버튼 */}
+            <div className="flex gap-2">
+              <select
+                value={exportFormat}
+                onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
+                className="flex-1 px-3 py-3 border border-gray-300 rounded-md bg-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-green-500"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                />
-              </svg>
-              {isExporting ? '내보내는 중...' : '📥 단어장 내보내기 (CSV)'}
-            </button>
+                <option value="csv">CSV (엑셀용)</option>
+                <option value="anki">Anki 덱</option>
+                <option value="quizlet">Quizlet 세트</option>
+              </select>
+              <button
+                onClick={handleExportData}
+                disabled={isExporting}
+                className={`flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-md transition-colors font-medium ${
+                  isExporting
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'hover:bg-green-700'
+                }`}
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                  />
+                </svg>
+                {isExporting ? '내보내는 중...' : '📥 내보내기'}
+              </button>
+            </div>
 
             {/* 가져오기 */}
             <label

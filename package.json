@@ -1,6 +1,6 @@
 {
   "name": "catchvoca-monorepo",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Local-First vocabulary learning Chrome extension with SM-2 spaced repetition",
   "author": "CatchVoca Team",

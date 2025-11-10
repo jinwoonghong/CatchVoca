@@ -1,0 +1,85 @@
+CatchVoca Extension Codebase Analysis Report
+
+Date: 2025-11-10
+Scope: packages/extension/src (29 files, ~10,628 lines)
+
+HIGH PRIORITY ISSUES (4.5 hours)
+================================
+
+1. Disabled Keyboard Manager Import
+   File: content/index.ts:9
+   Issue: Disabled import but file still exists
+   Recommendation: Remove file or restore functionality
+   Effort: 1-2 hours
+
+2. Unused Exports in aiUsageManager.ts
+   Functions: setProStatus(), resetAIUsage()
+   Issue: Exported but never imported
+   Recommendation: Remove exports or document as dev tools
+   Effort: 30 minutes
+
+3. Unused Firebase Functions
+   File: firebaseVocabService.ts
+   Issue: uploadVocabularyToFirebase() and downloadVocabularyFromFirebase() unused
+   Recommendation: Verify if needed; consolidate with syncService
+   Effort: 1 hour
+
+MEDIUM PRIORITY ISSUES (9 hours)
+================================
+
+1. Duplicate Logger Implementations (5+ locations)
+   Found in: messageHandlers.ts, wordService.ts, syncService.ts, index.ts, content/index.ts
+   Issue: Same logger pattern reimplemented 5+ times
+   Recommendation: Create shared logger utility
+   Effort: 2-3 hours
+
+2. Duplicate Validation Logic (3+ locations)
+   Found in: content/index.ts (multiple), background/index.ts
+   Issue: Word validation (1-50 chars, max 3 words) hardcoded in 3+ places
+   Recommendation: Create @catchvoca/core validation utility
+   Effort: 3-4 hours
+
+3. Error Logging with Sensitive Data
+   File: syncService.ts:237-241
+   Issue: Raw API response body logged
+   Recommendation: Sanitize error logs, only log safe details
+   Effort: 1 hour
+
+4. Inconsistent Retry Logic
+   File: syncService.ts has retryOperation() but dictionaryAPI uses withRetry()
+   Recommendation: Standardize on one approach
+   Effort: 1-2 hours
+
+5. Unused Type Imports
+   File: SettingsTab.tsx:9
+   Issue: SyncStatus imported but not used
+   Effort: 15 minutes
+
+6. TODO Comments for Incomplete Features
+   File: SettingsTab.tsx:305
+   Issue: 'Pro feature - ad popup' marked as TODO
+   Recommendation: Create proper issue/task
+   Effort: 30 minutes
+
+7. Null Fields Always Set
+   File: wordService.ts:65-66
+   Issue: contextSnapshot and selectionRange always null
+   Recommendation: Remove or document as reserved
+   Effort: 20 minutes
+
+LOW PRIORITY ISSUES (1 hour)
+============================
+
+1. Unused Parameters (messageHandlers.ts:766)
+2. Commented Code Blocks (content/index.ts:698-701)
+
+TOTAL EFFORT: 14.5 hours
+RECOMMENDED FOCUS: High + Medium impact items = 10-11 hours
+
+KEY RECOMMENDATIONS:
+1. Create shared logger utility (HIGH IMPACT, quick win)
+2. Create validation utility (HIGH IMPACT, affects 3+ locations)
+3. Clean up keyboardManager decision (code clarity)
+4. Remove unused exports (API cleanliness)
+5. Sanitize error logging (security)
+
