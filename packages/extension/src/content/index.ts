@@ -6,7 +6,7 @@
 import type { WordEntryInput, LookupResult, Settings } from '@catchvoca/types';
 import { DEFAULT_SETTINGS } from '@catchvoca/types';
 import { initializeAIHighlighter } from './aiHighlighter';
-import { initializeKeyboardManager } from './keyboardManager';
+// import { initializeKeyboardManager } from './keyboardManager'; // DISABLED: 사용자 설정과 충돌
 
 // 툴팁 요소
 let tooltip: HTMLDivElement | null = null;
@@ -762,6 +762,8 @@ loadSettings();
 initializeAIHighlighter();
 
 // Keyboard Manager 초기화
-initializeKeyboardManager();
+// DISABLED: keyboardManager는 하드코딩된 단축키를 사용하여 사용자 설정(wordReadingMode)과 충돌
+// wordReadingMode가 사용자 설정을 올바르게 처리하므로 keyboardManager는 비활성화
+// initializeKeyboardManager();
 
 console.log('[CatchVoca] Content script loaded');
