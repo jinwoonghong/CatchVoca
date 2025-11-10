@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CatchVoca",
   "version": "1.0.0",
-  "description": "Local-First vocabulary learning with SM-2 spaced repetition",
+  "description": "웹서핑 중 모르는 단어를 클릭 한 번으로 저장하고, AI 분석과 SM-2 알고리즘으로 효과적으로 암기하세요",
   "author": "CatchVoca Team",
   "permissions": [
     "storage",

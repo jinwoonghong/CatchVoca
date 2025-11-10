@@ -1178,7 +1178,7 @@ export function SettingsTab({ onUserAuthChanged }: SettingsTabProps) {
       {/* ===== Section 8: 버전 정보 ===== */}
       <div className="text-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
         <p className="text-sm text-gray-500">
-          ℹ️ 버전 0.3.0
+          ℹ️ 버전 1.0.0
         </p>
       </div>
 
