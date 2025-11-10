@@ -24,9 +24,9 @@ console.log('[CatchVoca] ========================================');
 // 설정 로드
 async function loadSettings(): Promise<void> {
   try {
-    const result = await chrome.storage.local.get('settings');
-    if (result.settings) {
-      currentSettings = { ...DEFAULT_SETTINGS, ...result.settings };
+    const result = await chrome.storage.local.get('catchvoca_settings');
+    if (result.catchvoca_settings) {
+      currentSettings = { ...DEFAULT_SETTINGS, ...result.catchvoca_settings };
     }
     console.log('[CatchVoca] Settings loaded:', currentSettings);
 
@@ -39,8 +39,8 @@ async function loadSettings(): Promise<void> {
 
 // 설정 변경 감지 (local storage 감지)
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.settings) {
-    currentSettings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
+  if (areaName === 'local' && changes.catchvoca_settings) {
+    currentSettings = { ...DEFAULT_SETTINGS, ...changes.catchvoca_settings.newValue };
     console.log('[CatchVoca] Settings updated via storage.onChanged:', currentSettings);
 
     // 설정 변경 시 이벤트 핸들러 재등록

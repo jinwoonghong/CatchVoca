@@ -242,8 +242,8 @@ export async function getAIUsageStats(): Promise<{
  */
 async function getAIUsageLimitDisabled(): Promise<boolean> {
   try {
-    const result = await chrome.storage.local.get('settings');
-    const settings = result.settings;
+    const result = await chrome.storage.local.get('catchvoca_settings');
+    const settings = result.catchvoca_settings;
     // 개발 단계에서는 기본적으로 제한 해제 (정식 배포 전)
     // 설정 값이 명시적으로 false가 아닌 이상 true 반환
     if (settings?.disableAIUsageLimit !== undefined) {
