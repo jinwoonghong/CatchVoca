@@ -102,17 +102,17 @@ function registerEventHandlers(): void {
         return;
       }
 
-      // Ctrl/Cmd + 클릭
+      // Ctrl/Cmd + 클릭 → 툴팁 표시
       if (mode === 'ctrl-click' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         event.stopPropagation();
-        await handleCtrlClick(event);
+        await handleClickTooltip(event);
       }
-      // Alt + 클릭
+      // Alt + 클릭 → 툴팁 표시
       else if (mode === 'alt-click' && event.altKey) {
         event.preventDefault();
         event.stopPropagation();
-        await handleAltClick(event);
+        await handleClickTooltip(event);
       }
     };
     document.addEventListener('click', clickHandler, true); // capture phase
@@ -664,95 +664,19 @@ function getWordAtPosition(x: number, y: number): string | null {
 }
 
 /**
- * Ctrl + 클릭: 단어 조회
+ * 클릭으로 단어 조회 (Ctrl+클릭 또는 Alt+클릭)
  */
-async function handleCtrlClick(event: MouseEvent): Promise<void> {
+async function handleClickTooltip(event: MouseEvent): Promise<void> {
   const word = getWordAtPosition(event.clientX, event.clientY);
 
   if (!word || word.length < 1 || word.length > 50) {
     return;
   }
 
-  console.log('[CatchVoca] Ctrl+Click - Word found:', word);
+  console.log('[CatchVoca] Click - Word found:', word);
 
   // 툴팁 표시
   await showTooltip(word, event.clientX, event.clientY);
-}
-
-/**
- * Alt + 클릭: 단어 즉시 저장
- */
-async function handleAltClick(event: MouseEvent): Promise<void> {
-  const word = getWordAtPosition(event.clientX, event.clientY);
-
-  if (!word || word.length < 1 || word.length > 50) {
-    return;
-  }
-
-  console.log('[CatchVoca] Alt+Click - Saving word:', word);
-
-  try {
-    // 단어 데이터 추출
-    const wordData = extractWordData(word);
-
-    // Background에 저장 요청
-    const response = await chrome.runtime.sendMessage({
-      type: 'SAVE_WORD',
-      wordData,
-    });
-
-    if (response.success) {
-      // 저장 성공 알림 (간단한 토스트)
-      showSaveNotification(word, event.clientX, event.clientY);
-    } else {
-      console.error('[CatchVoca] Save failed:', response.error);
-    }
-  } catch (error) {
-    console.error('[CatchVoca] Alt+Click save error:', error);
-  }
-}
-
-/**
- * 저장 성공 알림 토스트 표시
- */
-function showSaveNotification(word: string, x: number, y: number): void {
-  const toast = document.createElement('div');
-  toast.textContent = `✅ "${word}" 저장됨`;
-  toast.style.cssText = `
-    position: fixed;
-    top: ${y - 40}px;
-    left: ${x}px;
-    background: #10b981;
-    color: white;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 999999;
-    pointer-events: none;
-    animation: fadeInOut 2s ease-in-out;
-  `;
-
-  // 애니메이션 정의
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes fadeInOut {
-      0% { opacity: 0; transform: translateY(10px); }
-      20% { opacity: 1; transform: translateY(0); }
-      80% { opacity: 1; transform: translateY(0); }
-      100% { opacity: 0; transform: translateY(-10px); }
-    }
-  `;
-  document.head.appendChild(style);
-
-  document.body.appendChild(toast);
-
-  // 2초 후 제거
-  setTimeout(() => {
-    toast.remove();
-    style.remove();
-  }, 2000);
 }
 
 // 초기화: 설정 로드 및 이벤트 핸들러 등록
