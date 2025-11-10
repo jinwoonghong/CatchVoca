@@ -578,22 +578,11 @@ async function handleAnalyzePageAI(
   sendResponse: (response: MessageResponse) => void
 ): Promise<void> {
   try {
-    // 사용량 확인
+    // 사용량 확인 (항상 허용, 광고 표시 여부만 확인)
     const usageCheck = await canUseAI();
 
-    if (!usageCheck.allowed) {
-      sendResponse({
-        success: false,
-        error: usageCheck.isPro
-          ? 'AI analysis temporarily unavailable'
-          : `Daily limit reached (${usageCheck.remaining} remaining)`,
-        data: {
-          isPro: usageCheck.isPro,
-          remaining: usageCheck.remaining,
-        },
-      });
-      return;
-    }
+    // AI 분석은 항상 허용 (allowed는 항상 true)
+    // showAd가 true면 프론트엔드에서 광고 표시
 
     // Gemini API 호출
     const request: GeminiAnalysisRequest = {
@@ -644,7 +633,12 @@ async function handleAnalyzePageAI(
 
     sendResponse({
       success: true,
-      data: result,
+      data: {
+        ...result,
+        showAd: usageCheck.showAd, // 3회 초과 시 광고 표시 필요
+        usedCount: usageCheck.usedCount,
+        freeLimit: usageCheck.freeLimit,
+      },
     });
   } catch (error) {
     log.error('AI analysis failed', error);
