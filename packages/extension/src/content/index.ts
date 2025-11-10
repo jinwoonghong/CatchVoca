@@ -175,6 +175,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     return true; // Keep channel open for async response
   }
+  // 설정 변경 알림 (단축키 설정 포함)
+  else if (message.type === 'UPDATE_HIGHLIGHT_SETTINGS') {
+    console.log('[CatchVoca] Received settings update:', message);
+
+    // 설정 다시 로드
+    loadSettings();
+
+    sendResponse({ success: true });
+    return true;
+  }
   return true;
 });
 

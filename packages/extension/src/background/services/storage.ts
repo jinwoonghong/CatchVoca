@@ -63,8 +63,7 @@ export async function updateSettings(settings: Partial<Settings>): Promise<void>
         if (tab.id) {
           await chrome.tabs.sendMessage(tab.id, {
             type: 'UPDATE_HIGHLIGHT_SETTINGS',
-            settings: updatedSettings.highlightSettings,
-            keyboardSettings: updatedSettings.keyboardSettings,
+            settings: updatedSettings, // 전체 설정 전달 (wordReadingMode 포함)
           }).catch(() => {
             // Content script가 로드되지 않은 탭은 무시
           });
