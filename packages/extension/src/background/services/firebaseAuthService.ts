@@ -1,11 +1,11 @@
 /**
  * Firebase Authentication Service
- * - 구글 로그인/로그아웃
+ * - 구글 로그인/로그아웃 (Chrome Identity API만 사용)
  * - 사용자 정보 관리
  * - 세션 유지
  */
 
-// User 타입 정의 (Firebase Auth SDK를 import하지 않기 위해)
+// User 타입 정의 (간소화)
 export interface User {
   uid: string;
   email: string | null;
@@ -15,88 +15,112 @@ export interface User {
   providerId: string;
 }
 
-// 현재 로그인된 사용자 (메모리에만 저장)
+// 현재 로그인된 사용자 (메모리와 chrome.storage에 저장)
 let currentUser: User | null = null;
 
-// 간단한 로거 (background service worker용)
+// 간단한 로거
 const log = {
   info: (msg: string, data?: any) => console.log(`[FirebaseAuth] ${msg}`, data || ''),
   error: (msg: string, error?: any) => console.error(`[FirebaseAuth] ${msg}`, error || ''),
 };
 
 /**
- * 구글 로그인 (Chrome Identity API 사용)
- * Chrome Extension에서는 launchWebAuthFlow 사용
+ * 구글 로그인 (Chrome Identity API - launchWebAuthFlow 사용)
+ * 1. launchWebAuthFlow로 OAuth 인증 (unpacked extension 지원)
+ * 2. Access token 추출
+ * 3. Google UserInfo API로 사용자 정보 획득
  */
 export async function signInWithGoogle(): Promise<User | null> {
   try {
-    log.info('Starting Google sign-in');
+    log.info('Starting Google sign-in with launchWebAuthFlow');
 
-    // OAuth2 URL 생성
-    const manifest = chrome.runtime.getManifest() as any;
-    const clientId = manifest?.oauth2?.client_id as string | undefined;
-
-    if (!clientId) {
-      log.error('Client ID not found in manifest', { manifestKeys: Object.keys(manifest || {}) });
-      throw new Error('OAuth2 client_id not configured in manifest.json');
+    // Chrome Identity API 사용 가능 여부 확인
+    if (!chrome.identity) {
+      throw new Error('chrome.identity API is not available');
     }
 
-    log.info('Client ID found', { clientId: clientId.substring(0, 20) + '...' });
-
+    // OAuth2 설정
+    // Chrome Extension용 Client ID (chrome extension ver)
+    const clientId = '967073037521-dfs3lt81s9kd4vil2chgf4pemb47sg79.apps.googleusercontent.com';
     const redirectUrl = chrome.identity.getRedirectURL();
-    log.info('Redirect URL', { redirectUrl });
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/auth');
+    const scopes = [
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile'
+    ];
+
+    log.info('OAuth configuration:', {
+      clientId: clientId.substring(0, 20) + '...',
+      redirectUrl,
+      scopes
+    });
+
+    // OAuth URL 생성
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', clientId);
     authUrl.searchParams.set('response_type', 'token');
     authUrl.searchParams.set('redirect_uri', redirectUrl);
-    authUrl.searchParams.set('scope', [
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile'
-    ].join(' '));
+    authUrl.searchParams.set('scope', scopes.join(' '));
 
-    log.info('Launching web auth flow');
+    log.info('Launching web auth flow...');
 
-    // Web Auth Flow로 토큰 얻기
+    // launchWebAuthFlow로 OAuth 인증
     const responseUrl = await new Promise<string>((resolve, reject) => {
       chrome.identity.launchWebAuthFlow(
         {
           url: authUrl.toString(),
           interactive: true
         },
-        (responseUrl) => {
+        (redirectUrl) => {
           if (chrome.runtime.lastError) {
+            log.error('launchWebAuthFlow error', chrome.runtime.lastError);
             reject(chrome.runtime.lastError);
-          } else if (responseUrl) {
-            resolve(responseUrl);
+          } else if (redirectUrl) {
+            resolve(redirectUrl);
           } else {
-            reject(new Error('No response URL'));
+            reject(new Error('No redirect URL received'));
           }
         }
       );
     });
 
-    // URL에서 access token 추출
+    log.info('Auth flow completed, extracting token...');
+
+    // URL에서 access_token 추출
     const url = new URL(responseUrl);
-    const accessToken = url.hash.match(/access_token=([^&]+)/)?.[1];
+    const accessToken = url.hash
+      .substring(1)
+      .split('&')
+      .find(param => param.startsWith('access_token='))
+      ?.split('=')[1];
 
     if (!accessToken) {
-      throw new Error('No access token in response');
+      throw new Error('Access token not found in response');
     }
 
-    log.info('Access token received');
+    log.info('Access token received', {
+      tokenLength: accessToken.length,
+      tokenPrefix: accessToken.substring(0, 10) + '...'
+    });
 
-    // Google User Info API로 사용자 정보 가져오기
+    // Google UserInfo API로 사용자 정보 가져오기
+    log.info('Fetching user info from Google API...');
+
     const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
 
+    log.info('User info response received', { status: userInfoResponse.status });
+
     if (!userInfoResponse.ok) {
-      throw new Error('Failed to fetch user info');
+      const errorText = await userInfoResponse.text();
+      log.error('User info request failed', { status: userInfoResponse.status, errorText });
+      throw new Error(`Failed to fetch user info: ${userInfoResponse.status} - ${errorText}`);
     }
 
     const userInfo = await userInfoResponse.json();
+    log.info('User info received', { email: userInfo.email, id: userInfo.id });
 
-    // User 객체 생성 (Firebase User 형식에 맞게)
+    // 사용자 정보로 User 객체 생성
     currentUser = {
       uid: userInfo.id,
       email: userInfo.email,
@@ -104,7 +128,13 @@ export async function signInWithGoogle(): Promise<User | null> {
       photoURL: userInfo.picture,
       emailVerified: userInfo.verified_email,
       providerId: 'google.com'
-    } as User;
+    };
+
+    // Access token과 함께 Chrome storage에 저장
+    await chrome.storage.local.set({
+      firebaseAuthUser: currentUser,
+      googleAccessToken: accessToken // sync에서 사용할 토큰
+    });
 
     log.info('User signed in', { uid: currentUser.uid, email: currentUser.email });
 
@@ -120,13 +150,8 @@ export async function signInWithGoogle(): Promise<User | null> {
  */
 export async function signOut(): Promise<void> {
   try {
-    // Chrome에서 캐시된 토큰 제거
-    await new Promise<void>((resolve) => {
-      chrome.identity.clearAllCachedAuthTokens(() => {
-        log.info('All auth tokens cleared');
-        resolve();
-      });
-    });
+    // Chrome storage에서 사용자 정보 및 토큰 제거
+    await chrome.storage.local.remove(['firebaseAuthUser', 'googleAccessToken']);
 
     currentUser = null;
     log.info('User signed out');
@@ -137,11 +162,40 @@ export async function signOut(): Promise<void> {
 }
 
 /**
+ * 저장된 Access Token 가져오기 (sync에서 사용)
+ */
+export async function getAccessToken(): Promise<string | null> {
+  try {
+    const result = await chrome.storage.local.get(['googleAccessToken']);
+    return result.googleAccessToken || null;
+  } catch (error) {
+    log.error('Get access token failed', error);
+    return null;
+  }
+}
+
+/**
  * 현재 로그인된 사용자 가져오기
  */
 export async function getCurrentUser(): Promise<User | null> {
-  // 메모리에 저장된 사용자 정보 반환
-  return currentUser;
+  try {
+    // 메모리에 저장된 사용자 정보가 있으면 반환
+    if (currentUser) {
+      return currentUser;
+    }
+
+    // Chrome storage에서 사용자 정보 로드
+    const result = await chrome.storage.local.get(['firebaseAuthUser']);
+    if (result.firebaseAuthUser) {
+      currentUser = result.firebaseAuthUser;
+      return currentUser;
+    }
+
+    return null;
+  } catch (error) {
+    log.error('Get current user failed', error);
+    return null;
+  }
 }
 
 /**

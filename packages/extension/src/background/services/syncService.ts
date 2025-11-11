@@ -19,6 +19,7 @@ import type {
 } from '@catchvoca/types';
 import { getDbInstance } from '../dbInstance';
 import { eventBus } from '@catchvoca/core';
+import * as firebaseAuthService from './firebaseAuthService';
 
 /**
  * Sync Service Configuration
@@ -71,51 +72,34 @@ class SyncService {
 
   /**
    * Authenticate user with Google OAuth
-   * Uses Chrome Identity API to get OAuth token
+   * Uses Firebase Auth with Chrome Identity API
    */
   async authenticate(): Promise<AuthUser> {
     try {
-      // Get Google OAuth token from Chrome Identity API
-      const token = await new Promise<string>((resolve, reject) => {
-        chrome.identity.getAuthToken({ interactive: true }, (token) => {
-          if (chrome.runtime.lastError) {
-            reject(chrome.runtime.lastError);
-          } else if (token) {
-            resolve(token);
-          } else {
-            reject(new Error('No token received'));
-          }
-        });
-      });
+      // Firebase Auth를 통한 Google 로그인
+      const user = await firebaseAuthService.signInWithGoogle();
 
-      // Verify token with backend and get custom Firebase token
-      const response = await fetch(`${SYNC_CONFIG.API_BASE_URL}/auth/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ accessToken: token }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Authentication failed: ${response.status}`);
+      if (!user) {
+        throw new Error('Authentication failed');
       }
 
-      const data = await response.json();
+      // AuthUser 형식으로 변환
+      this.currentUser = {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || '',
+        photoURL: user.photoURL || '',
+      };
 
-      // Save auth state
-      this.authToken = data.customToken;
-      this.currentUser = data.user;
-
+      // authToken은 Firebase Auth에서 자동으로 관리됨
+      // 여기서는 사용자 정보만 저장
       await chrome.storage.local.set({
-        authToken: this.authToken,
         currentUser: this.currentUser,
       });
 
       console.log('[SyncService] Authentication successful:', this.currentUser);
 
-      // Type assertion: currentUser is guaranteed to be non-null here
-      return this.currentUser!;
+      return this.currentUser;
     } catch (error) {
       console.error('[SyncService] Authentication failed:', error);
       throw error;
@@ -128,12 +112,8 @@ class SyncService {
    */
   async signOut(): Promise<void> {
     try {
-      // Revoke Chrome Identity token
-      if (this.authToken) {
-        await new Promise<void>((resolve) => {
-          chrome.identity.clearAllCachedAuthTokens(() => resolve());
-        });
-      }
+      // Firebase Auth 로그아웃
+      await firebaseAuthService.signOut();
 
       // Clear local state
       this.authToken = null;
@@ -153,11 +133,29 @@ class SyncService {
   }
 
   /**
+   * Get access token for API requests
+   */
+  private async getIdToken(): Promise<string> {
+    const user = await firebaseAuthService.getCurrentUser();
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
+
+    // 저장된 Google Access Token 가져오기
+    const token = await firebaseAuthService.getAccessToken();
+    if (!token) {
+      throw new Error('Access token not found. Please sign in again.');
+    }
+
+    return token;
+  }
+
+  /**
    * Push local changes to server
    * Uploads words and reviews modified since last sync
    */
   async pushSync(): Promise<SyncResult> {
-    if (!this.authToken) {
+    if (!this.currentUser) {
       throw new Error('Not authenticated');
     }
 
@@ -167,6 +165,9 @@ class SyncService {
 
     try {
       this.syncInProgress = true;
+
+      // Get Firebase ID token
+      const idToken = await this.getIdToken();
 
       // Get local changes from IndexedDB
       const db = await getDbInstance();
@@ -222,7 +223,7 @@ class SyncService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.authToken}`,
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({
           words: localWords,
@@ -276,7 +277,7 @@ class SyncService {
    * Downloads words and reviews modified since last sync
    */
   async pullSync(): Promise<SyncResult> {
-    if (!this.authToken) {
+    if (!this.currentUser) {
       throw new Error('Not authenticated');
     }
 
@@ -287,13 +288,16 @@ class SyncService {
     try {
       this.syncInProgress = true;
 
+      // Get Firebase ID token
+      const idToken = await this.getIdToken();
+
       // Pull from server
       const response = await fetch(
         `${SYNC_CONFIG.API_BASE_URL}/sync/pull?lastSyncedAt=${this.lastSyncedAt}`,
         {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${this.authToken}`,
+            Authorization: `Bearer ${idToken}`,
           },
         }
       );
@@ -489,9 +493,9 @@ class SyncService {
    */
   getStatus(): SyncStatus {
     return {
-      isAuthenticated: !!this.authToken,
+      isAuthenticated: !!this.currentUser,
       currentUser: this.currentUser,
-      authToken: this.authToken,
+      authToken: this.authToken, // 하위 호환성을 위해 유지 (null)
       lastSyncedAt: this.lastSyncedAt,
       syncInProgress: this.syncInProgress,
     };
