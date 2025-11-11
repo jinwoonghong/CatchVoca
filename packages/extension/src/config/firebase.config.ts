@@ -22,6 +22,7 @@ export const firebaseConfig = {
  */
 export const FIREBASE_PATHS = {
   QUIZZES: 'quizzes',
+  VOCABULARY: 'vocabulary',
 } as const;
 
 /**

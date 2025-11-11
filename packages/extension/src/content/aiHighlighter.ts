@@ -96,6 +96,11 @@ export function initializeAIHighlighter(): void {
       sendResponse({ success: true });
     } else if (message.type === 'UPDATE_HIGHLIGHT_SETTINGS') {
       updateHighlightSettings(message.settings);
+      // 토글 키도 함께 업데이트
+      if (message.keyboardSettings?.toggleLearnedHighlight) {
+        toggleLearnedHighlightKey = message.keyboardSettings.toggleLearnedHighlight;
+        console.log('[AIHighlighter] Updated toggle key:', toggleLearnedHighlightKey);
+      }
       sendResponse({ success: true });
     } else if (message.type === 'WORD_SAVED') {
       // 단어 저장 시 학습 단어 목록에 추가하고 하이라이트 재적용

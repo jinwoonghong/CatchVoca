@@ -27,8 +27,6 @@ export function LibraryTab() {
   const [editingWord, setEditingWord] = useState<EditingWord | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const [mobileQuizUrl, setMobileQuizUrl] = useState<string | null>(null);
-  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [selectedWords, setSelectedWords] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
 
@@ -56,7 +54,7 @@ export function LibraryTab() {
     // 태그 필터
     if (selectedTags.length > 0) {
       filtered = filtered.filter((word) =>
-        selectedTags.some((tag) => word.tags.includes(tag))
+        selectedTags.some((tag) => word.tags?.includes(tag))
       );
     }
 
@@ -372,7 +370,7 @@ export function LibraryTab() {
   const getAllTags = (): string[] => {
     const tagSet = new Set<string>();
     words.forEach((word) => {
-      word.tags.forEach((tag) => tagSet.add(tag));
+      word.tags?.forEach((tag) => tagSet.add(tag));
     });
     return Array.from(tagSet).sort();
   };
@@ -384,41 +382,6 @@ export function LibraryTab() {
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
-  };
-
-  /**
-   * 모바일 퀴즈 링크 생성
-   */
-  const handleGenerateMobileQuizLink = async () => {
-    setIsGeneratingLink(true);
-    setError(null);
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'GENERATE_MOBILE_QUIZ_LINK',
-        data: {
-          maxWords: 20,
-          prioritizeDue: true,
-          includeRecent: true,
-        },
-      });
-
-      if (response.success) {
-        setMobileQuizUrl(response.data.url);
-        // 클립보드에 자동 복사
-        await navigator.clipboard.writeText(response.data.url);
-        alert(
-          `모바일 퀴즈 링크가 생성되었습니다!\n단어 수: ${response.data.wordCount}개\n압축 크기: ${response.data.compressedSize}자\n\n클립보드에 복사되었습니다.`
-        );
-      } else {
-        setError(response.error || '모바일 퀴즈 링크 생성에 실패했습니다.');
-      }
-    } catch (err) {
-      setError('모바일 퀴즈 링크 생성 중 오류가 발생했습니다.');
-      console.error('[LibraryTab] Generate mobile quiz link error:', err);
-    } finally {
-      setIsGeneratingLink(false);
-    }
   };
 
   return (
@@ -557,48 +520,6 @@ export function LibraryTab() {
         )}
       </div>
 
-      {/* 모바일 퀴즈 버튼 */}
-      {!isLoading && words.length > 0 && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleGenerateMobileQuizLink}
-            disabled={isGeneratingLink}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium rounded-md transition-all ${
-              isGeneratingLink
-                ? 'opacity-50 cursor-not-allowed'
-                : 'hover:from-blue-600 hover:to-indigo-700 shadow-md hover:shadow-lg'
-            }`}
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-            {isGeneratingLink ? '생성 중...' : '📱 모바일에서 학습하기'}
-          </button>
-          {mobileQuizUrl && (
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(mobileQuizUrl);
-                alert('링크가 클립보드에 복사되었습니다.');
-              }}
-              className="px-3 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-md hover:bg-gray-200 transition-colors"
-              title="링크 다시 복사"
-            >
-              📋
-            </button>
-          )}
-        </div>
-      )}
-
       {/* 오류 메시지 */}
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
@@ -694,6 +615,12 @@ export function LibraryTab() {
                       >
                         🔊
                       </button>
+                    )}
+                    {/* 조회수 표시 */}
+                    {word.viewCount !== undefined && word.viewCount > 0 && (
+                      <span className="text-xs text-gray-700 bg-gray-100 px-2 py-1 rounded">
+                        조회 {word.viewCount}회
+                      </span>
                     )}
                   </div>
                 </div>

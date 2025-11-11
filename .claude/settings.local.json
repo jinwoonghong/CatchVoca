@@ -25,7 +25,16 @@
       "Bash(pnpm --filter extension typecheck:*)",
       "Bash(pnpm --filter extension build:*)",
       "SlashCommand(/sc:analyze)",
-      "Bash(pnpm --filter @catchvoca/core build:*)"
+      "Bash(pnpm --filter @catchvoca/core build:*)",
+      "Bash(curl:*)",
+      "Bash(npx:*)",
+      "Bash(npm search:*)",
+      "Bash(where:*)",
+      "Bash(del d:projectCatchVoca.mcp.json)",
+      "Bash(dir \"C:\\Users\\User\\.claude\" /b)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

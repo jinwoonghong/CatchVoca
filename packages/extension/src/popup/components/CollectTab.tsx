@@ -234,7 +234,14 @@ export function CollectTab({ onSwitchToSettings: _onSwitchToSettings }: CollectT
               </div>
             )}
             {lookupResult.isSaved && (
-              <p className="text-xs text-green-600 mt-1">✅ 이미 저장된 단어입니다</p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-xs text-green-600">✅ 이미 저장된 단어입니다</p>
+                {lookupResult.viewCount !== undefined && lookupResult.viewCount > 0 && (
+                  <span className="text-xs text-gray-700 bg-gray-100 px-2 py-1 rounded">
+                    조회 {lookupResult.viewCount}회
+                  </span>
+                )}
+              </div>
             )}
           </div>
 

@@ -17,14 +17,11 @@ interface ReviewSession {
   showAnswer: boolean;
 }
 
-interface UserInfo {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
+interface QuizTabProps {
+  onSwitchToSettings: () => void;
 }
 
-export function QuizTab() {
+export function QuizTab({ onSwitchToSettings }: QuizTabProps) {
   const [session, setSession] = useState<ReviewSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,61 +36,13 @@ export function QuizTab() {
   const [mobileUrl, setMobileUrl] = useState<string | null>(null);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
 
-  // 사용자 인증 상태
-  const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
-
   /**
-   * 복습 통계 로드
+   * 복습 통계 로드 및 모바일 퀴즈 자동 동기화
    */
   useEffect(() => {
     loadStats();
+    autoSyncMobileQuiz(); // 자동 동기화
   }, []);
-
-  /**
-   * 현재 사용자 확인
-   */
-  useEffect(() => {
-    checkCurrentUser();
-  }, []);
-
-  const checkCurrentUser = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'GET_CURRENT_USER' });
-      if (response.success && response.data) {
-        setCurrentUser(response.data);
-      }
-    } catch (err) {
-      console.error('[QuizTab] Check user error:', err);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'GOOGLE_SIGN_IN' });
-      if (response.success && response.data) {
-        setCurrentUser(response.data);
-        alert(`✅ 로그인 성공!\n\n${response.data.email}님, 환영합니다!`);
-      } else {
-        alert('❌ 로그인에 실패했습니다.\n\n' + (response.error || '알 수 없는 오류'));
-      }
-    } catch (err) {
-      console.error('[QuizTab] Sign in error:', err);
-      alert('로그인 중 오류가 발생했습니다.');
-    }
-  };
-
-  const handleGoogleSignOut = async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'GOOGLE_SIGN_OUT' });
-      if (response.success) {
-        setCurrentUser(null);
-        alert('✅ 로그아웃되었습니다.');
-      }
-    } catch (err) {
-      console.error('[QuizTab] Sign out error:', err);
-      alert('로그아웃 중 오류가 발생했습니다.');
-    }
-  };
 
   const loadStats = async () => {
     try {
@@ -106,6 +55,53 @@ export function QuizTab() {
       }
     } catch (err) {
       console.error('[QuizTab] Load stats error:', err);
+    }
+  };
+
+  /**
+   * 모바일 퀴즈 자동 동기화 (탭 열릴 때)
+   */
+  const autoSyncMobileQuiz = async () => {
+    try {
+      const storage = await chrome.storage.local.get('lastMobileQuizId');
+      const quizId = storage.lastMobileQuizId;
+
+      console.log('[QuizTab] Checking for mobile quiz sync...', { quizId, hasQuizId: !!quizId });
+
+      if (!quizId) {
+        console.log('[QuizTab] No mobile quiz ID found, skipping auto-sync');
+        return;
+      }
+
+      console.log('[QuizTab] Auto-syncing mobile quiz:', quizId);
+      const response = await chrome.runtime.sendMessage({
+        type: 'SYNC_FROM_MOBILE',
+        quizId,
+      });
+
+      console.log('[QuizTab] Sync response:', response);
+
+      if (response.success) {
+        const syncedCount = response.data?.syncedCount || 0;
+        console.log(`[QuizTab] Auto-sync completed: ${syncedCount} words synced`);
+
+        // ✅ 동기화 성공 후 quizId 삭제 (중복 동기화 방지)
+        await chrome.storage.local.remove('lastMobileQuizId');
+        console.log('[QuizTab] Removed lastMobileQuizId after successful sync');
+
+        if (syncedCount > 0) {
+          // 통계 새로고침
+          await loadStats();
+          alert(`✅ 모바일 학습 결과 동기화 완료!\n\n${syncedCount}개 단어의 학습 기록이 업데이트되었습니다.`);
+        } else {
+          console.log('[QuizTab] No new data to sync from mobile');
+        }
+      } else {
+        console.error('[QuizTab] Sync failed:', response.error);
+      }
+    } catch (err) {
+      console.error('[QuizTab] Auto-sync error:', err);
+      // 자동 동기화 실패는 조용히 처리 (사용자 방해 안 함)
     }
   };
 
@@ -214,37 +210,44 @@ export function QuizTab() {
     setQrCodeDataUrl(null);
 
     try {
-      // 로그인 확인
-      if (!currentUser) {
-        const shouldSignIn = confirm(
-          '구글 로그인이 필요합니다.\n\n' +
-          '모바일 학습 기능을 사용하려면 구글 계정으로 로그인해주세요.\n\n' +
-          '지금 로그인하시겠습니까?'
-        );
+      // 최신 로그인 상태 확인
+      const userResponse = await chrome.runtime.sendMessage({ type: 'GET_CURRENT_USER' });
 
-        if (shouldSignIn) {
-          await handleGoogleSignIn();
-          // 로그인 후 다시 확인
-          const userResponse = await chrome.runtime.sendMessage({ type: 'GET_CURRENT_USER' });
-          if (!userResponse.success || !userResponse.data) {
-            setIsUploading(false);
-            return;
-          }
-          setCurrentUser(userResponse.data);
-        } else {
-          setIsUploading(false);
-          return;
-        }
+      if (!userResponse.success || !userResponse.data) {
+        // 로그인이 안 되어 있으면 설정 탭으로 이동
+        setIsUploading(false);
+        onSwitchToSettings();
+        return;
       }
 
       // 1. Background에서 모바일 퀴즈 링크 생성 요청 (Firebase 방식)
       const response = await chrome.runtime.sendMessage({ type: 'GENERATE_MOBILE_QUIZ_LINK' });
 
       if (response.success && response.data) {
-        const { url, expiresAt } = response.data;
+        const { url, expiresAt, quizId } = response.data;
         setMobileUrl(url);
 
-        // 2. QR 코드 생성
+        // quizId를 chrome.storage에 저장 (나중에 동기화용)
+        if (quizId) {
+          try {
+            await chrome.storage.local.set({ lastMobileQuizId: quizId });
+            console.log('[QuizTab] Saved quizId for later sync:', quizId);
+          } catch (storageErr) {
+            console.error('[QuizTab] Failed to save quizId:', storageErr);
+          }
+        }
+
+        // 2. 클립보드에 URL 자동 복사
+        let clipboardSuccess = true;
+        try {
+          await navigator.clipboard.writeText(url);
+          console.log('[QuizTab] URL copied to clipboard:', url);
+        } catch (copyErr) {
+          console.error('[QuizTab] Failed to copy URL to clipboard:', copyErr);
+          clipboardSuccess = false;
+        }
+
+        // 3. QR 코드 생성
         try {
           const qrDataUrl = await QRCode.toDataURL(url, {
             width: 200,
@@ -260,14 +263,18 @@ export function QuizTab() {
           alert('⚠️ QR 코드 생성에 실패했습니다.\nURL을 직접 복사해서 사용해주세요.');
         }
 
-        // 3. 성공 메시지
+        // 4. 성공 메시지
         const expirationDate = new Date(expiresAt);
         const expirationStr = `${expirationDate.getMonth() + 1}/${expirationDate.getDate()} ${expirationDate.getHours()}:${expirationDate.getMinutes().toString().padStart(2, '0')}`;
+
+        const clipboardMsg = clipboardSuccess
+          ? `🔗 링크가 자동으로 복사되었습니다.\n\n`
+          : `⚠️ 클립보드 복사에 실패했습니다.\n💡 QR 코드 아래 링크를 직접 복사하세요.\n\n`;
 
         alert(
           `✅ 모바일 퀴즈가 생성되었습니다!\n\n` +
           `📱 만료일시: ${expirationStr}\n` +
-          `🔗 링크가 자동으로 복사되었습니다.\n\n` +
+          clipboardMsg +
           `💡 QR 코드를 스캔하거나 링크를 공유하세요!`
         );
       } else {
@@ -347,33 +354,6 @@ export function QuizTab() {
           <p className="mt-2 text-sm text-gray-600">
             {stats ? `오늘 ${stats.dueToday}개의 단어를 복습할 수 있습니다` : '복습할 단어를 불러오는 중...'}
           </p>
-
-          {/* 로그인 상태 표시 */}
-          {currentUser && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-              <div className="flex items-center gap-2 justify-center">
-                {currentUser.photoURL && (
-                  <img
-                    src={currentUser.photoURL}
-                    alt="Profile"
-                    className="w-8 h-8 rounded-full"
-                  />
-                )}
-                <div className="flex-1 text-left">
-                  <p className="text-sm font-medium text-blue-900">
-                    {currentUser.displayName || currentUser.email}
-                  </p>
-                  <p className="text-xs text-blue-700">✅ 로그인됨</p>
-                </div>
-                <button
-                  onClick={handleGoogleSignOut}
-                  className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  로그아웃
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="mt-6 flex gap-3">
             <button
@@ -507,7 +487,23 @@ export function QuizTab() {
         <div className="text-center mb-6">
           <h2 className="text-3xl font-bold text-gray-900">{currentWord.word}</h2>
           {currentWord.phonetic && (
-            <p className="text-sm text-gray-500 mt-2">{currentWord.phonetic}</p>
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <span className="text-sm text-gray-500">[{currentWord.phonetic}]</span>
+              {currentWord.audioUrl && (
+                <button
+                  onClick={() => {
+                    const audio = new Audio(currentWord.audioUrl);
+                    audio.play().catch((err) => {
+                      console.error('[QuizTab] Audio play error:', err);
+                    });
+                  }}
+                  className="text-gray-600 hover:text-primary-600"
+                  title="발음 듣기"
+                >
+                  🔊
+                </button>
+              )}
+            </div>
           )}
         </div>
 

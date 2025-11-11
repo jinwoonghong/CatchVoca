@@ -102,7 +102,9 @@ export class ReviewStateRepository extends BaseRepository<
       interval: reviewState.interval,
     };
 
-    const updatedHistory = [...reviewState.history, reviewLog];
+    // ✅ history가 undefined이거나 배열이 아닐 수 있으므로 안전하게 처리
+    const existingHistory = Array.isArray(reviewState.history) ? reviewState.history : [];
+    const updatedHistory = [...existingHistory, reviewLog];
 
     // ReviewState 업데이트
     await this.update(wordId, {
@@ -134,7 +136,7 @@ export class ReviewStateRepository extends BaseRepository<
 
     // 오늘 복습한 개수 계산
     const completedToday = all.filter((state) => {
-      if (state.history.length === 0) return false;
+      if (!state.history || state.history.length === 0) return false;
       const lastReview = state.history[state.history.length - 1];
       return lastReview && lastReview.reviewedAt >= todayStartTimestamp;
     }).length;
