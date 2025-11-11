@@ -1,11 +1,23 @@
 /**
- * Firebase Authentication Service
- * - 구글 로그인/로그아웃 (Chrome Identity API만 사용)
- * - 사용자 정보 관리
- * - 세션 유지
+ * Firebase Authentication Service (Custom Token 방식)
+ * - Chrome Identity API로 Google OAuth
+ * - Vercel API로 Custom Token 교환
+ * - Firebase Auth로 로그인
+ * - 완전한 에러 처리 및 재시도 로직
  */
 
-// User 타입 정의 (간소화)
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth, signInWithCustomToken, Auth } from 'firebase/auth';
+import { firebaseConfig } from '../../config/firebase.config';
+import {
+  retryWithBackoff,
+  withTimeout,
+  checkStorageQuota,
+  cleanupOldStorage,
+  isAccessTokenExpired,
+} from '../utils/auth-helpers';
+
+// User 타입 정의
 export interface User {
   uid: string;
   email: string | null;
@@ -15,162 +27,326 @@ export interface User {
   providerId: string;
 }
 
-// 현재 로그인된 사용자 (메모리와 chrome.storage에 저장)
-let currentUser: User | null = null;
-
-// 간단한 로거
-const log = {
+// 로거
+const logger = {
   info: (msg: string, data?: any) => console.log(`[FirebaseAuth] ${msg}`, data || ''),
   error: (msg: string, error?: any) => console.error(`[FirebaseAuth] ${msg}`, error || ''),
+  warn: (msg: string, data?: any) => console.warn(`[FirebaseAuth] ${msg}`, data || ''),
 };
 
+// 상수
+const OAUTH_TIMEOUT = 30000; // 30초
+const API_TIMEOUT = 15000; // 15초
+const VERCEL_API_URL =
+  import.meta.env.VITE_VERCEL_API_URL || 'https://catch-voca-quiz.vercel.app';
+
+// 상태 관리
+let authOperationInProgress = false;
+const authWaiters: Array<(user: User | null) => void> = [];
+
 /**
- * 구글 로그인 (Chrome Identity API - launchWebAuthFlow 사용)
- * 1. launchWebAuthFlow로 OAuth 인증 (unpacked extension 지원)
- * 2. Access token 추출
- * 3. Google UserInfo API로 사용자 정보 획득
+ * Firebase 초기화 (싱글톤)
+ */
+export function initializeFirebase(): { auth: Auth } {
+  const apps = getApps();
+  let auth: Auth;
+
+  if (apps.length > 0) {
+    auth = getAuth(apps[0]);
+    logger.info('Using existing Firebase app');
+  } else {
+    const app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    logger.info('Firebase app initialized');
+  }
+
+  return { auth };
+}
+
+/**
+ * Google 로그인 (전체 인증 플로우)
  */
 export async function signInWithGoogle(): Promise<User | null> {
+  // 동시 작업 방지
+  if (authOperationInProgress) {
+    logger.info('Auth operation in progress, waiting...');
+    return new Promise((resolve) => authWaiters.push(resolve));
+  }
+
+  authOperationInProgress = true;
+
   try {
-    log.info('Starting Google sign-in with launchWebAuthFlow');
+    logger.info('=== Starting Google Sign-In Flow ===');
 
-    // Chrome Identity API 사용 가능 여부 확인
-    if (!chrome.identity) {
-      throw new Error('chrome.identity API is not available');
+    // Storage quota 체크
+    const quota = await checkStorageQuota();
+    logger.info('Storage quota:', quota);
+
+    if (quota.usagePercent > 80) {
+      logger.warn('Storage quota high, cleaning up...');
+      await cleanupOldStorage();
     }
 
-    // OAuth2 설정
-    // Chrome Extension용 Client ID (chrome extension ver)
-    const clientId = '967073037521-dfs3lt81s9kd4vil2chgf4pemb47sg79.apps.googleusercontent.com';
-    const redirectUrl = chrome.identity.getRedirectURL();
-    const scopes = [
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile'
-    ];
+    // Step 1: Chrome Identity OAuth
+    logger.info('Step 1: Chrome Identity OAuth');
+    const accessToken = await performChromeIdentityAuth();
 
-    log.info('OAuth configuration:', {
-      clientId: clientId.substring(0, 20) + '...',
-      redirectUrl,
-      scopes
-    });
+    // Step 2: Token 교환
+    logger.info('Step 2: Exchange for Custom Token');
+    const { customToken, user: userInfo } = await exchangeForCustomToken(accessToken);
 
-    // OAuth URL 생성
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('response_type', 'token');
-    authUrl.searchParams.set('redirect_uri', redirectUrl);
-    authUrl.searchParams.set('scope', scopes.join(' '));
+    // Step 3: Firebase 로그인
+    logger.info('Step 3: Sign in to Firebase');
+    const firebaseUser = await signInToFirebase(customToken);
 
-    log.info('Launching web auth flow...');
-
-    // launchWebAuthFlow로 OAuth 인증
-    const responseUrl = await new Promise<string>((resolve, reject) => {
-      chrome.identity.launchWebAuthFlow(
-        {
-          url: authUrl.toString(),
-          interactive: true
-        },
-        (redirectUrl) => {
-          if (chrome.runtime.lastError) {
-            log.error('launchWebAuthFlow error', chrome.runtime.lastError);
-            reject(chrome.runtime.lastError);
-          } else if (redirectUrl) {
-            resolve(redirectUrl);
-          } else {
-            reject(new Error('No redirect URL received'));
-          }
-        }
-      );
-    });
-
-    log.info('Auth flow completed, extracting token...');
-
-    // URL에서 access_token 추출
-    const url = new URL(responseUrl);
-    const accessToken = url.hash
-      .substring(1)
-      .split('&')
-      .find(param => param.startsWith('access_token='))
-      ?.split('=')[1];
-
-    if (!accessToken) {
-      throw new Error('Access token not found in response');
-    }
-
-    log.info('Access token received', {
-      tokenLength: accessToken.length,
-      tokenPrefix: accessToken.substring(0, 10) + '...'
-    });
-
-    // Google UserInfo API로 사용자 정보 가져오기
-    log.info('Fetching user info from Google API...');
-
-    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-
-    log.info('User info response received', { status: userInfoResponse.status });
-
-    if (!userInfoResponse.ok) {
-      const errorText = await userInfoResponse.text();
-      log.error('User info request failed', { status: userInfoResponse.status, errorText });
-      throw new Error(`Failed to fetch user info: ${userInfoResponse.status} - ${errorText}`);
-    }
-
-    const userInfo = await userInfoResponse.json();
-    log.info('User info received', { email: userInfo.email, id: userInfo.id });
-
-    // 사용자 정보로 User 객체 생성
-    currentUser = {
-      uid: userInfo.id,
+    // Step 4: User 객체 생성 및 저장
+    const user: User = {
+      uid: firebaseUser.uid,
       email: userInfo.email,
-      displayName: userInfo.name,
-      photoURL: userInfo.picture,
-      emailVerified: userInfo.verified_email,
-      providerId: 'google.com'
+      displayName: userInfo.displayName,
+      photoURL: userInfo.photoURL,
+      emailVerified: userInfo.emailVerified,
+      providerId: 'google.com',
     };
 
-    // Access token과 함께 Chrome storage에 저장
-    await chrome.storage.local.set({
-      firebaseAuthUser: currentUser,
-      googleAccessToken: accessToken // sync에서 사용할 토큰
-    });
+    await persistUser(user, accessToken);
 
-    log.info('User signed in', { uid: currentUser.uid, email: currentUser.email });
+    logger.info('=== Sign-In Successful ===', { uid: user.uid });
 
-    return currentUser;
+    // 대기 중인 요청들에게 알림
+    authWaiters.forEach((resolve) => resolve(user));
+    authWaiters.length = 0;
+
+    return user;
   } catch (error) {
-    log.error('Google sign-in failed', error);
-    return null;
+    logger.error('=== Sign-In Failed ===', error);
+
+    // 대기 중인 요청들에게 실패 알림
+    authWaiters.forEach((resolve) => resolve(null));
+    authWaiters.length = 0;
+
+    // 사용자가 취소한 경우 null 반환 (에러 던지지 않음)
+    if (error instanceof Error && error.message === 'USER_CANCELLED') {
+      logger.info('User cancelled login');
+      return null;
+    }
+
+    throw error;
+  } finally {
+    authOperationInProgress = false;
   }
 }
 
 /**
- * 로그아웃
+ * Step 1: Chrome Identity API OAuth
  */
-export async function signOut(): Promise<void> {
-  try {
-    // Chrome storage에서 사용자 정보 및 토큰 제거
-    await chrome.storage.local.remove(['firebaseAuthUser', 'googleAccessToken']);
+async function performChromeIdentityAuth(): Promise<string> {
+  if (!chrome.identity) {
+    throw new Error('chrome.identity API not available');
+  }
 
-    currentUser = null;
-    log.info('User signed out');
+  const clientId =
+    '967073037521-dfs3lt81s9kd4vil2chgf4pemb47sg79.apps.googleusercontent.com';
+  const redirectUrl = chrome.identity.getRedirectURL();
+  const scopes = [
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+  ];
+
+  logger.info('OAuth config', { redirectUrl });
+
+  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('response_type', 'token');
+  authUrl.searchParams.set('redirect_uri', redirectUrl);
+  authUrl.searchParams.set('scope', scopes.join(' '));
+
+  try {
+    const responseUrl = await withTimeout(
+      launchWebAuthFlow(authUrl.toString()),
+      OAUTH_TIMEOUT,
+      'OAuth flow timed out'
+    );
+
+    const accessToken = extractAccessToken(responseUrl);
+    logger.info('Access token obtained');
+
+    return accessToken;
   } catch (error) {
-    log.error('Sign out failed', error);
+    if (error instanceof Error) {
+      if (error.message.includes('did not approve')) {
+        throw new Error('USER_CANCELLED');
+      }
+      if (error.message.includes('timed out')) {
+        throw new Error('OAUTH_TIMEOUT: OAuth flow took too long');
+      }
+    }
+    throw error;
+  }
+}
+
+function launchWebAuthFlow(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow({ url, interactive: true }, (responseUrl) => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else if (responseUrl) {
+        resolve(responseUrl);
+      } else {
+        reject(new Error('No redirect URL received'));
+      }
+    });
+  });
+}
+
+function extractAccessToken(responseUrl: string): string {
+  const url = new URL(responseUrl);
+  const hash = url.hash.substring(1);
+
+  if (!hash) {
+    throw new Error('No OAuth response data in URL hash');
+  }
+
+  const params = new URLSearchParams(hash);
+  const token = params.get('access_token');
+
+  if (!token) {
+    const error = params.get('error');
+    const errorDesc = params.get('error_description');
+    throw new Error(`OAuth error: ${error} - ${errorDesc}`);
+  }
+
+  if (!/^[\w\-\.]+$/.test(token)) {
+    throw new Error('Invalid access token format');
+  }
+
+  return token;
+}
+
+/**
+ * Step 2: Token 교환 (Vercel API)
+ */
+async function exchangeForCustomToken(accessToken: string): Promise<{
+  customToken: string;
+  user: {
+    email: string;
+    displayName: string;
+    photoURL: string;
+    emailVerified: boolean;
+  };
+}> {
+  const endpoint = `${VERCEL_API_URL}/api/auth/exchange-token`;
+
+  try {
+    const response = await retryWithBackoff(async () => {
+      return await withTimeout(
+        fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }),
+        API_TIMEOUT,
+        'Token exchange API timed out'
+      );
+    }, 3);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({
+        error: 'Unknown error',
+      }));
+
+      throw new Error(
+        `Token exchange failed (${response.status}): ${errorData.error || errorData.message}`
+      );
+    }
+
+    const data = await response.json();
+
+    if (!data.customToken || !data.user) {
+      throw new Error('Invalid response from token exchange API');
+    }
+
+    return {
+      customToken: data.customToken,
+      user: data.user,
+    };
+  } catch (error) {
+    logger.error('Token exchange error', error);
+
+    if (error instanceof Error) {
+      if (error.message.includes('timed out')) {
+        throw new Error('EXCHANGE_TIMEOUT: Token exchange API did not respond');
+      }
+      if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+        throw new Error('NETWORK_ERROR: Cannot reach token exchange API');
+      }
+    }
+
+    throw new Error(
+      `Token exchange failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Step 3: Firebase 로그인
+ */
+async function signInToFirebase(customToken: string) {
+  const { auth } = initializeFirebase();
+
+  // Token 포맷 검증
+  const parts = customToken.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid custom token format (not a JWT)');
+  }
+
+  try {
+    const userCredential = await withTimeout(
+      signInWithCustomToken(auth, customToken),
+      API_TIMEOUT,
+      'Firebase sign-in timed out'
+    );
+
+    return userCredential.user;
+  } catch (error: any) {
+    logger.error('Firebase sign-in error', error);
+
+    if (error.code === 'auth/invalid-custom-token') {
+      throw new Error('INVALID_CUSTOM_TOKEN: Token rejected by Firebase');
+    }
+    if (error.code === 'auth/network-request-failed') {
+      throw new Error('FIREBASE_NETWORK_ERROR: Cannot reach Firebase');
+    }
+    if (error.message?.includes('timed out')) {
+      throw new Error('FIREBASE_TIMEOUT: Firebase did not respond');
+    }
+
     throw error;
   }
 }
 
 /**
- * 저장된 Access Token 가져오기 (sync에서 사용)
+ * Step 4: User 정보 저장
  */
-export async function getAccessToken(): Promise<string | null> {
+async function persistUser(user: User, accessToken: string): Promise<void> {
   try {
-    const result = await chrome.storage.local.get(['googleAccessToken']);
-    return result.googleAccessToken || null;
-  } catch (error) {
-    log.error('Get access token failed', error);
-    return null;
+    const expiresAt = Date.now() + 3600 * 1000; // 1시간 후
+
+    await chrome.storage.local.set({
+      firebaseAuthUser: user,
+      googleAccessToken: accessToken,
+      authExpiresAt: expiresAt,
+    });
+
+    logger.info('User data persisted to storage');
+  } catch (error: any) {
+    if (error.name === 'QuotaExceededError') {
+      logger.error('Storage quota exceeded');
+      throw new Error('STORAGE_QUOTA_EXCEEDED: Cannot save user data');
+    }
+    throw error;
   }
 }
 
@@ -179,44 +355,79 @@ export async function getAccessToken(): Promise<string | null> {
  */
 export async function getCurrentUser(): Promise<User | null> {
   try {
-    // 메모리에 저장된 사용자 정보가 있으면 반환
-    if (currentUser) {
-      return currentUser;
-    }
-
-    // Chrome storage에서 사용자 정보 로드
-    const result = await chrome.storage.local.get(['firebaseAuthUser']);
-    if (result.firebaseAuthUser) {
-      currentUser = result.firebaseAuthUser;
-      return currentUser;
-    }
-
-    return null;
+    const result = await chrome.storage.local.get('firebaseAuthUser');
+    return (result.firebaseAuthUser as User) || null;
   } catch (error) {
-    log.error('Get current user failed', error);
+    logger.error('Failed to get current user', error);
     return null;
   }
 }
 
 /**
- * 사용자 ID 가져오기
+ * 유효한 Firebase ID Token 가져오기
  */
+export async function getValidIdToken(): Promise<string> {
+  const { auth } = initializeFirebase();
+
+  if (!auth.currentUser) {
+    throw new Error('Not authenticated - no Firebase user');
+  }
+
+  try {
+    // Access Token 만료 확인
+    const isExpired = await isAccessTokenExpired();
+    if (isExpired) {
+      logger.warn('Access token expired, need to re-authenticate');
+      throw new Error('TOKEN_EXPIRED: Please sign in again');
+    }
+
+    // Firebase ID Token 가져오기
+    const idToken = await auth.currentUser.getIdToken(false);
+    return idToken;
+  } catch (error) {
+    logger.error('Failed to get ID token', error);
+    throw error;
+  }
+}
+
+/**
+ * 로그아웃
+ */
+export async function signOut(): Promise<void> {
+  try {
+    const { auth } = initializeFirebase();
+    await auth.signOut();
+
+    await chrome.storage.local.remove(['firebaseAuthUser', 'googleAccessToken', 'authExpiresAt']);
+
+    logger.info('Sign out successful');
+  } catch (error) {
+    logger.error('Sign out failed', error);
+    throw error;
+  }
+}
+
+// 이전 API와의 호환성을 위한 함수들
+export async function getAccessToken(): Promise<string | null> {
+  try {
+    const result = await chrome.storage.local.get(['googleAccessToken']);
+    return result.googleAccessToken || null;
+  } catch (error) {
+    logger.error('Get access token failed', error);
+    return null;
+  }
+}
+
 export async function getUserId(): Promise<string | null> {
   const user = await getCurrentUser();
   return user?.uid || null;
 }
 
-/**
- * 사용자 이메일 가져오기
- */
 export async function getUserEmail(): Promise<string | null> {
   const user = await getCurrentUser();
   return user?.email || null;
 }
 
-/**
- * 로그인 상태 확인
- */
 export async function isSignedIn(): Promise<boolean> {
   const user = await getCurrentUser();
   return user !== null;

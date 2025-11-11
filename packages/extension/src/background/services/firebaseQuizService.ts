@@ -3,9 +3,9 @@
  * URL Hash 방식의 한계(2048자)를 극복하기 위한 대안
  */
 
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, get, remove } from 'firebase/database';
-import { getAuth, signInWithCustomToken } from 'firebase/auth';
+import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { getDatabase, ref, set, get, remove, type Database } from 'firebase/database';
+import { getAuth, type Auth, type User as FirebaseUser } from 'firebase/auth';
 import type { WordEntry } from '@catchvoca/types';
 import { firebaseConfig, FIREBASE_PATHS, QUIZ_EXPIRATION_MS } from '../../config/firebase.config';
 import { createWordRepository, createReviewStateRepository } from '@catchvoca/core';
@@ -33,12 +33,11 @@ async function ensureRepositories() {
 /**
  * Firebase 앱 초기화 (싱글톤)
  */
-let firebaseApp: ReturnType<typeof initializeApp> | null = null;
-let database: ReturnType<typeof getDatabase> | null = null;
-let auth: ReturnType<typeof getAuth> | null = null;
-let isAuthenticating = false;
+let firebaseApp: FirebaseApp | null = null;
+let database: Database | null = null;
+let auth: Auth | null = null;
 
-function initializeFirebase() {
+function initializeFirebase(): { db: Database; auth: Auth } {
   if (!firebaseApp) {
     firebaseApp = initializeApp(firebaseConfig);
     database = getDatabase(firebaseApp);
@@ -49,67 +48,38 @@ function initializeFirebase() {
 }
 
 /**
- * Firebase Auth 인증 (Custom Token 사용)
+ * Firebase Auth 인증
+ * 수정: Anonymous Auth 제거, firebaseAuthService 사용
  */
 async function ensureAuthenticated(): Promise<void> {
-  const { auth } = initializeFirebase();
+  const firebaseAuth = initializeFirebase().auth;
 
   // 이미 로그인되어 있으면 스킵
-  if (auth.currentUser) {
-    logger.info('Already authenticated', { uid: auth.currentUser.uid });
+  if (firebaseAuth.currentUser) {
+    logger.info('Already authenticated', { uid: firebaseAuth.currentUser.uid });
     return;
   }
 
-  // 다른 요청이 인증 중이면 대기
-  if (isAuthenticating) {
-    logger.info('Authentication in progress, waiting...');
+  logger.info('Not authenticated, checking firebaseAuthService...');
 
-    // ✅ Promise.race로 타임아웃 또는 성공 대기
-    const waitForAuth = new Promise<void>((resolve, reject) => {
-      const interval = setInterval(() => {
-        if (auth.currentUser) {
-          clearInterval(interval);
-          resolve();
-        }
-      }, 100);
+  // firebaseAuthService에서 현재 사용자 확인
+  const { getCurrentUser } = await import('./firebaseAuthService');
+  const user = await getCurrentUser();
 
-      setTimeout(() => {
-        clearInterval(interval);
-        reject(new Error('Authentication timeout'));
-      }, 5000);
-    });
-
-    await waitForAuth;
-    logger.info('Authentication completed by another request');
-    return;
+  if (!user) {
+    throw new Error('로그인이 필요합니다. 먼저 구글 로그인을 해주세요.');
   }
 
-  isAuthenticating = true;
-
-  try {
-    // syncService에서 customToken 가져오기
-    const { syncService } = await import('./syncService');
-    const status = syncService.getStatus();
-
-    if (!status.isAuthenticated || !status.authToken) {
-      throw new Error('로그인이 필요합니다. 먼저 구글 로그인을 해주세요.');
-    }
-
-    // Firebase Auth에 Custom Token으로 로그인
-    logger.info('Signing in with custom token...', {
-      tokenLength: status.authToken.length,
-      tokenPrefix: status.authToken.substring(0, 20) + '...',
-      userId: status.currentUser?.uid
-    });
-    const userCredential = await signInWithCustomToken(auth, status.authToken);
-    logger.info('Firebase Auth sign-in successful', { uid: userCredential.user.uid });
-  } catch (error) {
-    // ✅ 에러 발생 시 isAuthenticating 즉시 false
-    isAuthenticating = false;
-    throw error;
-  } finally {
-    isAuthenticating = false;
+  // firebaseAuthService가 이미 Firebase Auth 세션을 관리하므로
+  // firebaseAuth.currentUser가 자동으로 설정되어 있어야 함
+  if (!firebaseAuth.currentUser) {
+    logger.warn('User exists but Firebase session not found');
+    throw new Error('Firebase 인증 세션을 찾을 수 없습니다. 다시 로그인해주세요.');
   }
+
+  // TypeScript narrowing을 위한 변수 할당
+  const currentFirebaseUser: FirebaseUser = firebaseAuth.currentUser;
+  logger.info('Firebase Auth session confirmed', { uid: currentFirebaseUser.uid });
 }
 
 /**
@@ -157,15 +127,15 @@ export async function uploadQuizToFirebase(
 
     const { db } = initializeFirebase();
 
-    // 사용자 로그인 확인 (syncService 사용 - chrome.storage.local에서 가져옴)
-    const { syncService } = await import('./syncService');
-    const status = syncService.getStatus();
+    // 사용자 로그인 확인
+    const { getCurrentUser } = await import('./firebaseAuthService');
+    const user = await getCurrentUser();
 
-    if (!status.isAuthenticated || !status.currentUser) {
+    if (!user) {
       throw new Error('로그인이 필요합니다. 먼저 구글 로그인을 해주세요.');
     }
 
-    const userId = status.currentUser.uid;
+    const userId = user.uid;
 
     // 고유 ID 생성
     const quizId = generateQuizId();
@@ -311,14 +281,14 @@ export async function syncReviewStatesFromFirebase(quizId: string): Promise<numb
     const { db } = initializeFirebase();
 
     // 사용자 로그인 확인
-    const { syncService } = await import('./syncService');
-    const status = syncService.getStatus();
+    const { getCurrentUser } = await import('./firebaseAuthService');
+    const user = await getCurrentUser();
 
-    if (!status.isAuthenticated || !status.currentUser) {
+    if (!user) {
       throw new Error('로그인이 필요합니다.');
     }
 
-    const userId = status.currentUser.uid;
+    const userId = user.uid;
 
     // Firebase에서 퀴즈 데이터 가져오기
     const quizRef = ref(db, `users/${userId}/${FIREBASE_PATHS.QUIZZES}/${quizId}`);

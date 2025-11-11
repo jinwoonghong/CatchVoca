@@ -133,7 +133,8 @@ class SyncService {
   }
 
   /**
-   * Get access token for API requests
+   * Get Firebase ID token for API requests
+   * 수정: Anonymous Auth 제거, firebaseAuthService의 통합 인증 사용
    */
   private async getIdToken(): Promise<string> {
     const user = await firebaseAuthService.getCurrentUser();
@@ -141,13 +142,25 @@ class SyncService {
       throw new Error('Not authenticated');
     }
 
-    // 저장된 Google Access Token 가져오기
-    const token = await firebaseAuthService.getAccessToken();
-    if (!token) {
-      throw new Error('Access token not found. Please sign in again.');
-    }
+    try {
+      // firebaseAuthService에서 유효한 ID Token 가져오기
+      const idToken = await firebaseAuthService.getValidIdToken();
 
-    return token;
+      console.log('[SyncService] Firebase ID token obtained', {
+        tokenLength: idToken.length,
+      });
+
+      return idToken;
+    } catch (error) {
+      console.error('[SyncService] Failed to get ID token:', error);
+
+      // Token 만료 에러면 재로그인 필요
+      if (error instanceof Error && error.message.includes('TOKEN_EXPIRED')) {
+        throw new Error('Token expired. Please sign in again.');
+      }
+
+      throw error;
+    }
   }
 
   /**
