@@ -6,8 +6,7 @@
 import type { WordEntryInput, LookupResult, Settings } from '@catchvoca/types';
 import { DEFAULT_SETTINGS } from '@catchvoca/types';
 import { initializeAIHighlighter } from './aiHighlighter';
-// import { initializePDFTextHandler } from './pdfTextHandler';
-import { initializeKeyboardManager } from './keyboardManager';
+// import { initializeKeyboardManager } from './keyboardManager'; // DISABLED: 사용자 설정과 충돌
 
 // 툴팁 요소
 let tooltip: HTMLDivElement | null = null;
@@ -15,14 +14,9 @@ let tooltip: HTMLDivElement | null = null;
 // 현재 설정
 let currentSettings: Settings = DEFAULT_SETTINGS;
 
-// 현재 페이지가 Chrome 내장 PDF 뷰어인지 확인
-// PDF.js 기반 뷰어는 일반 웹페이지처럼 처리되어야 함
-const isPDF = document.contentType === 'application/pdf';
-
 // 즉시 실행되는 디버그 로그 (스크립트 로드 확인용)
 console.log('[CatchVoca] ========================================');
 console.log('[CatchVoca] Content script initializing...');
-console.log('[CatchVoca] isPDF:', isPDF);
 console.log('[CatchVoca] document.contentType:', document.contentType);
 console.log('[CatchVoca] location.href:', window.location.href);
 console.log('[CatchVoca] ========================================');
@@ -30,9 +24,9 @@ console.log('[CatchVoca] ========================================');
 // 설정 로드
 async function loadSettings(): Promise<void> {
   try {
-    const result = await chrome.storage.sync.get('settings');
-    if (result.settings) {
-      currentSettings = { ...DEFAULT_SETTINGS, ...result.settings };
+    const result = await chrome.storage.local.get('catchvoca_settings');
+    if (result.catchvoca_settings) {
+      currentSettings = { ...DEFAULT_SETTINGS, ...result.catchvoca_settings };
     }
     console.log('[CatchVoca] Settings loaded:', currentSettings);
 
@@ -43,11 +37,11 @@ async function loadSettings(): Promise<void> {
   }
 }
 
-// 설정 변경 감지
+// 설정 변경 감지 (local storage 감지)
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'sync' && changes.settings) {
-    currentSettings = { ...DEFAULT_SETTINGS, ...changes.settings.newValue };
-    console.log('[CatchVoca] Settings updated:', currentSettings);
+  if (areaName === 'local' && changes.catchvoca_settings) {
+    currentSettings = { ...DEFAULT_SETTINGS, ...changes.catchvoca_settings.newValue };
+    console.log('[CatchVoca] Settings updated via storage.onChanged:', currentSettings);
 
     // 설정 변경 시 이벤트 핸들러 재등록
     registerEventHandlers();
@@ -57,15 +51,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 // 이벤트 핸들러 참조 (제거를 위해 저장)
 let mouseupHandler: ((e: MouseEvent) => void) | null = null;
 let clickHandler: ((e: MouseEvent) => Promise<void>) | null = null;
-
-// PDF clipboard 기반 처리를 위한 상태
-let lastMousePosition = { x: 0, y: 0 };
-
-// PDF 오버레이 iframe
-let pdfOverlay: HTMLIFrameElement | null = null;
-
-// PDF 이벤트 핸들러 참조
-let pdfMousemoveHandler: ((e: MouseEvent) => void) | null = null;
 
 /**
  * 설정에 따라 이벤트 핸들러 등록
@@ -81,32 +66,13 @@ function registerEventHandlers(): void {
     clickHandler = null;
   }
 
-  // PDF 이벤트 핸들러 제거
-  if (pdfMousemoveHandler) {
-    document.removeEventListener('mousemove', pdfMousemoveHandler);
-    pdfMousemoveHandler = null;
-  }
-
   // 현재 페이지 타입에 맞는 설정 선택
-  const mode = isPDF ? currentSettings.wordReadingMode.pdf : currentSettings.wordReadingMode.webpage;
+  const mode = currentSettings.wordReadingMode.webpage;
 
-  console.log('[CatchVoca] Registering handlers for mode:', mode, 'isPDF:', isPDF);
+  console.log('[CatchVoca] Registering handlers for mode:', mode);
 
-  // PDF에서 Ctrl+Drag 모드: 마우스 위치 추적만 수행
-  // (실제 단어 조회는 Ctrl+Shift+D 단축키로 처리)
-  if (isPDF && mode === 'ctrl-drag') {
-    console.log('[CatchVoca] Setting up PDF mouse position tracking');
-    console.log('[CatchVoca] PDF 사용법: 1) 텍스트 드래그 2) Ctrl+C 복사 3) Ctrl+Shift+D 조회');
-
-    // 마우스 위치 추적 (오버레이 표시 위치 결정용)
-    pdfMousemoveHandler = (e: MouseEvent) => {
-      lastMousePosition = { x: e.clientX, y: e.clientY };
-    };
-    document.addEventListener('mousemove', pdfMousemoveHandler);
-    console.log('[CatchVoca] PDF mousemove listener added');
-  }
-  // 웹페이지에서 드래그 모드: mouseup 이벤트 등록
-  else if (!isPDF && (mode === 'drag' || mode === 'ctrl-drag' || mode === 'alt-drag')) {
+  // 드래그 모드: mouseup 이벤트 등록
+  if (mode === 'drag' || mode === 'ctrl-drag' || mode === 'alt-drag') {
     mouseupHandler = (e: MouseEvent) => {
       // 툴팁 내부 클릭 무시
       if (tooltip && tooltip.contains(e.target as Node)) {
@@ -136,17 +102,17 @@ function registerEventHandlers(): void {
         return;
       }
 
-      // Ctrl/Cmd + 클릭
+      // Ctrl/Cmd + 클릭 → 툴팁 표시
       if (mode === 'ctrl-click' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         event.stopPropagation();
-        await handleCtrlClick(event);
+        await handleClickTooltip(event);
       }
-      // Alt + 클릭
+      // Alt + 클릭 → 툴팁 표시
       else if (mode === 'alt-click' && event.altKey) {
         event.preventDefault();
         event.stopPropagation();
-        await handleAltClick(event);
+        await handleClickTooltip(event);
       }
     };
     document.addEventListener('click', clickHandler, true); // capture phase
@@ -158,21 +124,11 @@ document.addEventListener('mousedown', (e) => {
   if (tooltip && !tooltip.contains(e.target as Node)) {
     removeTooltip();
   }
-
-  // PDF 오버레이 외부 클릭 시 닫기
-  if (pdfOverlay && !pdfOverlay.contains(e.target as Node)) {
-    removePDFOverlay();
-  }
 });
 
 // 툴팁 내부 클릭 시 이벤트 전파 중지 (외부 클릭 감지 방지)
 document.addEventListener('mousedown', (e) => {
   if (tooltip && tooltip.contains(e.target as Node)) {
-    e.stopPropagation();
-  }
-
-  // PDF 오버레이 내부 클릭 시 이벤트 전파 중지
-  if (pdfOverlay && pdfOverlay.contains(e.target as Node)) {
     e.stopPropagation();
   }
 }, true);
@@ -189,39 +145,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     } else {
       sendResponse({ success: false, error: 'No text selected' });
     }
-  }
-  // PDF 클립보드 읽기 요청 처리
-  else if (message.type === 'READ_CLIPBOARD') {
-    (async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        console.log('[CatchVoca] Clipboard read successful:', text);
-        sendResponse({ success: true, text });
-      } catch (error) {
-        console.error('[CatchVoca] Failed to read clipboard:', error);
-        sendResponse({ success: false, error: String(error) });
-      }
-    })();
-    return true; // Keep channel open for async response
-  }
-  // PDF 단어 조회 요청 처리
-  else if (message.type === 'LOOKUP_PDF_WORD') {
-    (async () => {
-      try {
-        console.log('[CatchVoca] Received LOOKUP_PDF_WORD message:', message.word);
-
-        // 마우스 위치가 없으면 화면 중앙에 표시
-        const x = lastMousePosition.x || window.innerWidth / 2;
-        const y = lastMousePosition.y || window.innerHeight / 2;
-
-        await showPDFOverlay(message.word, x, y);
-        sendResponse({ success: true });
-      } catch (error) {
-        console.error('[CatchVoca] Failed to show PDF overlay:', error);
-        sendResponse({ success: false, error: String(error) });
-      }
-    })();
-    return true; // Keep channel open for async response
   }
   // AI 페이지 분석을 위한 텍스트 추출
   else if (message.type === 'EXTRACT_PAGE_TEXT') {
@@ -252,99 +175,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     return true; // Keep channel open for async response
   }
+  // 설정 변경 알림 (단축키 설정 포함)
+  else if (message.type === 'UPDATE_HIGHLIGHT_SETTINGS') {
+    console.log('[CatchVoca] Received settings update:', message);
+
+    // 설정 다시 로드
+    loadSettings();
+
+    sendResponse({ success: true });
+    return true;
+  }
   return true;
-});
-
-// PDF 오버레이 iframe의 postMessage 처리
-window.addEventListener('message', async (event) => {
-  // 보안: 자신의 origin에서 온 메시지만 처리
-  if (event.origin !== window.location.origin && event.source !== pdfOverlay?.contentWindow) {
-    return;
-  }
-
-  const data = event.data;
-
-  switch (data.type) {
-    case 'CLOSE_PDF_OVERLAY':
-      removePDFOverlay();
-      break;
-
-    case 'PLAY_AUDIO':
-      if (data.audioUrl) {
-        const audio = new Audio(data.audioUrl);
-        audio.play().catch(err => console.error('[CatchVoca] Audio play error:', err));
-      }
-      break;
-
-    case 'OPEN_LIBRARY':
-      chrome.runtime.sendMessage({
-        type: 'OPEN_LIBRARY',
-        wordId: data.wordId
-      });
-      removePDFOverlay();
-      break;
-
-    case 'SAVE_WORD_FROM_OVERLAY':
-      try {
-        const wordData = {
-          word: data.word,
-          definitions: data.definitions,
-          phonetic: data.phonetic,
-          audioUrl: data.audioUrl,
-          // PDF에서는 context 추출 불가 (Chrome 보안 제약)
-          context: '',
-          url: window.location.href,
-          sourceTitle: document.title,
-        };
-
-        const response = await chrome.runtime.sendMessage({
-          type: 'SAVE_WORD',
-          wordData,
-        });
-
-        if (response.success) {
-          // 성공 메시지 표시
-          if (pdfOverlay) {
-            pdfOverlay.srcdoc = `
-              <!DOCTYPE html>
-              <html>
-              <head>
-                <style>
-                  body {
-                    margin: 0;
-                    padding: 16px;
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                    font-size: 14px;
-                    line-height: 1.5;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100px;
-                  }
-                  .success {
-                    color: #10b981;
-                    text-align: center;
-                    font-weight: 600;
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="success">✅ 저장되었습니다!</div>
-              </body>
-              </html>
-            `;
-          }
-
-          // 2초 후 오버레이 닫기
-          setTimeout(removePDFOverlay, 2000);
-        } else {
-          console.error('[CatchVoca] Save failed from overlay:', response.error);
-        }
-      } catch (error) {
-        console.error('[CatchVoca] Save error from overlay:', error);
-      }
-      break;
-  }
 });
 
 /**
@@ -458,362 +299,6 @@ function extractContext(selection: Selection | null): string {
 
   // 최후의 수단: 선택된 텍스트만 반환
   return selectedText;
-}
-
-/**
- * PDF 오버레이 iframe 표시
- */
-async function showPDFOverlay(word: string, mouseX: number, mouseY: number): Promise<void> {
-  // 기존 오버레이 제거
-  removePDFOverlay();
-
-  console.log('[CatchVoca] Creating PDF overlay for word:', word);
-
-  // iframe 생성
-  pdfOverlay = document.createElement('iframe');
-  pdfOverlay.id = 'catchvoca-pdf-overlay';
-
-  // 인라인 스타일 적용 (PDF 환경에서는 인라인 스타일이 필수)
-  pdfOverlay.style.position = 'fixed';
-  pdfOverlay.style.zIndex = '2147483647';
-  pdfOverlay.style.background = 'white';
-  pdfOverlay.style.border = '1px solid #e5e7eb';
-  pdfOverlay.style.borderRadius = '8px';
-  pdfOverlay.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
-  pdfOverlay.style.width = '400px';
-  pdfOverlay.style.minHeight = '200px';
-  pdfOverlay.style.maxHeight = '500px';
-
-  // 위치 계산 (마우스 우측하단, 여백 10px)
-  const offsetX = 10;
-  const offsetY = 10;
-  let top = mouseY + offsetY;
-  let left = mouseX + offsetX;
-
-  // 화면 밖으로 나가지 않도록 조정
-  if (left + 400 > window.innerWidth) {
-    left = mouseX - 400 - offsetX; // 마우스 왼쪽에 표시
-  }
-  if (top + 200 > window.innerHeight) {
-    top = mouseY - 200 - offsetY; // 마우스 위쪽에 표시
-  }
-
-  pdfOverlay.style.top = `${top}px`;
-  pdfOverlay.style.left = `${left}px`;
-
-  // 로딩 메시지를 위한 초기 HTML 설정
-  pdfOverlay.srcdoc = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body {
-          margin: 0;
-          padding: 16px;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 14px;
-          line-height: 1.5;
-        }
-        .loading {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-        }
-        .close-btn {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          background: #ef4444;
-          color: white;
-          border: none;
-          border-radius: 50%;
-          width: 24px;
-          height: 24px;
-          cursor: pointer;
-          font-size: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0;
-          line-height: 1;
-        }
-        .close-btn:hover {
-          background: #dc2626;
-        }
-      </style>
-    </head>
-    <body>
-      <button class="close-btn" onclick="window.parent.postMessage({type: 'CLOSE_PDF_OVERLAY'}, '*')">×</button>
-      <div class="loading">검색 중...</div>
-    </body>
-    </html>
-  `;
-
-  // DOM에 추가 (PDF에서는 document.body가 없을 수 있으므로 체크)
-  const targetElement = document.body || document.documentElement;
-  if (!targetElement) {
-    console.error('[CatchVoca] Cannot find element to attach PDF overlay');
-    return;
-  }
-  targetElement.appendChild(pdfOverlay);
-  console.log('[CatchVoca] PDF overlay added to DOM');
-
-  // API 조회
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: 'LOOKUP_WORD',
-      word: word,
-    });
-
-    if (response.success) {
-      const result: LookupResult = response.data;
-      updatePDFOverlayContent(word, result);
-
-      // 단어 조회 시 viewCount 증가
-      chrome.runtime.sendMessage({
-        type: 'INCREMENT_VIEW_COUNT',
-        word: word,
-      }).catch((err) => {
-        console.warn('[CatchVoca] Increment view count warning:', err);
-      });
-    } else {
-      updatePDFOverlayError('단어를 찾을 수 없습니다.');
-    }
-  } catch (error) {
-    console.error('[CatchVoca] PDF overlay lookup error:', error);
-    updatePDFOverlayError('검색 중 오류가 발생했습니다.');
-  }
-}
-
-/**
- * PDF 오버레이 내용 업데이트
- */
-function updatePDFOverlayContent(word: string, result: LookupResult): void {
-  if (!pdfOverlay) return;
-
-  console.log('[CatchVoca] Updating PDF overlay with result:', result);
-
-  const phoneticText = result.phonetic || '발음 정보 없음';
-  const hasAudio = !!result.audioUrl;
-
-  const definitionsHtml = result.definitions.length > 0
-    ? result.definitions.slice(0, 3).map((def, idx) => `
-        <div style="margin-bottom: 4px;">
-          <span style="color: #6b7280;">${idx + 1}.</span> ${def}
-        </div>
-      `).join('')
-    : '<div style="color: #9ca3af;">정의를 찾을 수 없습니다.</div>';
-
-  const viewCountHtml = result.viewCount && result.viewCount > 0
-    ? `<span style="
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        background: #f3f4f6;
-        color: #4b5563;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-size: 11px;
-        margin-left: 8px;
-      " title="${result.viewCount}번 조회">👁️ ${result.viewCount}</span>`
-    : '';
-
-  pdfOverlay.srcdoc = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body {
-          margin: 0;
-          padding: 16px;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 14px;
-          line-height: 1.5;
-        }
-        .close-btn {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          background: #ef4444;
-          color: white;
-          border: none;
-          border-radius: 50%;
-          width: 24px;
-          height: 24px;
-          cursor: pointer;
-          font-size: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0;
-          line-height: 1;
-        }
-        .close-btn:hover {
-          background: #dc2626;
-        }
-        .word-title {
-          display: flex;
-          align-items: center;
-          margin-bottom: 4px;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .phonetic-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 8px;
-        }
-        .phonetic-text {
-          color: #6b7280;
-          font-size: 13px;
-        }
-        .audio-btn {
-          background: #3b82f6;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 2px 8px;
-          cursor: pointer;
-          font-size: 11px;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
-        .audio-btn:hover {
-          background: #2563eb;
-        }
-        .audio-btn:disabled {
-          background: #d1d5db;
-          color: #9ca3af;
-          cursor: not-allowed;
-        }
-        .divider {
-          border-top: 1px solid #e5e7eb;
-          padding-top: 8px;
-          margin-top: 8px;
-        }
-        .save-btn {
-          background: #10b981;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 6px 12px;
-          cursor: pointer;
-          font-size: 13px;
-          margin-top: 8px;
-          width: 100%;
-        }
-        .save-btn:hover {
-          background: #059669;
-        }
-        .saved-btn {
-          background: #3b82f6;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          padding: 6px 12px;
-          cursor: pointer;
-          font-size: 13px;
-          margin-top: 8px;
-          width: 100%;
-        }
-        .saved-btn:hover {
-          background: #2563eb;
-        }
-      </style>
-    </head>
-    <body>
-      <button class="close-btn" onclick="window.parent.postMessage({type: 'CLOSE_PDF_OVERLAY'}, '*')">×</button>
-      <div class="word-title">
-        <div>${word}</div>
-        ${viewCountHtml}
-      </div>
-      <div class="phonetic-row">
-        <span class="phonetic-text">${phoneticText}</span>
-        <button class="audio-btn" ${!hasAudio ? 'disabled' : ''} onclick="window.parent.postMessage({type: 'PLAY_AUDIO', audioUrl: '${result.audioUrl || ''}'}, '*')">
-          🔊 ${hasAudio ? '듣기' : '없음'}
-        </button>
-      </div>
-      <div class="divider">
-        ${definitionsHtml}
-      </div>
-      ${result.isSaved
-        ? `<button class="saved-btn" onclick="window.parent.postMessage({type: 'OPEN_LIBRARY', wordId: '${result.wordId || ''}'}, '*')">
-            ✅ 저장됨 (라이브러리에서 관리)
-          </button>`
-        : `<button class="save-btn" onclick="window.parent.postMessage({type: 'SAVE_WORD_FROM_OVERLAY', word: '${word}', definitions: ${JSON.stringify(result.definitions)}, phonetic: '${result.phonetic || ''}', audioUrl: '${result.audioUrl || ''}'}, '*')">
-            💾 CatchVoca에 저장
-          </button>`
-      }
-    </body>
-    </html>
-  `;
-}
-
-/**
- * PDF 오버레이 에러 표시
- */
-function updatePDFOverlayError(message: string): void {
-  if (!pdfOverlay) return;
-
-  pdfOverlay.srcdoc = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body {
-          margin: 0;
-          padding: 16px;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          font-size: 14px;
-          line-height: 1.5;
-        }
-        .close-btn {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          background: #ef4444;
-          color: white;
-          border: none;
-          border-radius: 50%;
-          width: 24px;
-          height: 24px;
-          cursor: pointer;
-          font-size: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 0;
-          line-height: 1;
-        }
-        .error {
-          color: #ef4444;
-          text-align: center;
-          padding: 20px;
-        }
-      </style>
-    </head>
-    <body>
-      <button class="close-btn" onclick="window.parent.postMessage({type: 'CLOSE_PDF_OVERLAY'}, '*')">×</button>
-      <div class="error">${message}</div>
-    </body>
-    </html>
-  `;
-
-  // 3초 후 자동 닫기
-  setTimeout(removePDFOverlay, 3000);
-}
-
-/**
- * PDF 오버레이 제거
- */
-function removePDFOverlay(): void {
-  if (pdfOverlay) {
-    pdfOverlay.remove();
-    pdfOverlay = null;
-    console.log('[CatchVoca] PDF overlay removed');
-  }
 }
 
 /**
@@ -1143,27 +628,11 @@ function getWordAtPosition(x: number, y: number): string | null {
 
   console.log('[CatchVoca] Element at position:', element.tagName, element.className, element.textContent.substring(0, 50));
 
-  // PDF.js 텍스트 레이어 감지
-  const textLayerSpan = element.closest('.textLayer span') ||
-                        (element.classList?.contains('textLayer') ? element.querySelector('span') : null);
-
-  if (textLayerSpan && textLayerSpan.textContent) {
-    // PDF.js의 span은 단어 단위로 구성됨
-    console.log('[CatchVoca] PDF.js textLayer detected:', textLayerSpan.textContent);
-    const text = textLayerSpan.textContent.trim();
-    const words = text.match(/[a-zA-Z0-9'-]+/g);
-
-    if (words && words.length > 0) {
-      console.log('[CatchVoca] Extracted word from PDF.js span:', words[0]);
-      return words[0];
-    }
-  }
-
   // Range를 사용하여 클릭 위치의 텍스트 노드 찾기
   const range = document.caretRangeFromPoint?.(x, y);
 
   if (!range || !range.startContainer || range.startContainer.nodeType !== Node.TEXT_NODE) {
-    // PDF나 특수 환경에서 caretRangeFromPoint가 작동하지 않는 경우
+    // 특수 환경에서 caretRangeFromPoint가 작동하지 않는 경우
     // 요소의 전체 텍스트에서 단어 추출
     console.log('[CatchVoca] caretRangeFromPoint failed, using element text');
 
@@ -1171,7 +640,7 @@ function getWordAtPosition(x: number, y: number): string | null {
     const words = text.match(/[a-zA-Z0-9'-]+/g);
 
     if (words && words.length > 0) {
-      // 첫 번째 단어 반환 (PDF에서는 보통 span이 단어 단위)
+      // 첫 번째 단어 반환
       console.log('[CatchVoca] Found words in element:', words);
       return words[0];
     }
@@ -1205,95 +674,19 @@ function getWordAtPosition(x: number, y: number): string | null {
 }
 
 /**
- * Ctrl + 클릭: 단어 조회
+ * 클릭으로 단어 조회 (Ctrl+클릭 또는 Alt+클릭)
  */
-async function handleCtrlClick(event: MouseEvent): Promise<void> {
+async function handleClickTooltip(event: MouseEvent): Promise<void> {
   const word = getWordAtPosition(event.clientX, event.clientY);
 
   if (!word || word.length < 1 || word.length > 50) {
     return;
   }
 
-  console.log('[CatchVoca] Ctrl+Click - Word found:', word);
+  console.log('[CatchVoca] Click - Word found:', word);
 
   // 툴팁 표시
   await showTooltip(word, event.clientX, event.clientY);
-}
-
-/**
- * Alt + 클릭: 단어 즉시 저장
- */
-async function handleAltClick(event: MouseEvent): Promise<void> {
-  const word = getWordAtPosition(event.clientX, event.clientY);
-
-  if (!word || word.length < 1 || word.length > 50) {
-    return;
-  }
-
-  console.log('[CatchVoca] Alt+Click - Saving word:', word);
-
-  try {
-    // 단어 데이터 추출
-    const wordData = extractWordData(word);
-
-    // Background에 저장 요청
-    const response = await chrome.runtime.sendMessage({
-      type: 'SAVE_WORD',
-      wordData,
-    });
-
-    if (response.success) {
-      // 저장 성공 알림 (간단한 토스트)
-      showSaveNotification(word, event.clientX, event.clientY);
-    } else {
-      console.error('[CatchVoca] Save failed:', response.error);
-    }
-  } catch (error) {
-    console.error('[CatchVoca] Alt+Click save error:', error);
-  }
-}
-
-/**
- * 저장 성공 알림 토스트 표시
- */
-function showSaveNotification(word: string, x: number, y: number): void {
-  const toast = document.createElement('div');
-  toast.textContent = `✅ "${word}" 저장됨`;
-  toast.style.cssText = `
-    position: fixed;
-    top: ${y - 40}px;
-    left: ${x}px;
-    background: #10b981;
-    color: white;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 999999;
-    pointer-events: none;
-    animation: fadeInOut 2s ease-in-out;
-  `;
-
-  // 애니메이션 정의
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes fadeInOut {
-      0% { opacity: 0; transform: translateY(10px); }
-      20% { opacity: 1; transform: translateY(0); }
-      80% { opacity: 1; transform: translateY(0); }
-      100% { opacity: 0; transform: translateY(-10px); }
-    }
-  `;
-  document.head.appendChild(style);
-
-  document.body.appendChild(toast);
-
-  // 2초 후 제거
-  setTimeout(() => {
-    toast.remove();
-    style.remove();
-  }, 2000);
 }
 
 // 초기화: 설정 로드 및 이벤트 핸들러 등록
@@ -1302,10 +695,9 @@ loadSettings();
 // AI Highlighter 초기화
 initializeAIHighlighter();
 
-// PDF Text Handler 초기화 (설정 기반 모드를 사용하므로 비활성화)
-// initializePDFTextHandler();
-
 // Keyboard Manager 초기화
-initializeKeyboardManager();
+// DISABLED: keyboardManager는 하드코딩된 단축키를 사용하여 사용자 설정(wordReadingMode)과 충돌
+// wordReadingMode가 사용자 설정을 올바르게 처리하므로 keyboardManager는 비활성화
+// initializeKeyboardManager();
 
-console.log('[CatchVoca] Content script loaded', { isPDF });
+console.log('[CatchVoca] Content script loaded');

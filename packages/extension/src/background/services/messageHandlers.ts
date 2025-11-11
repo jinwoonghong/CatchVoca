@@ -27,7 +27,7 @@ async function ensureRepositories() {
   }
   // After this call, repositories are guaranteed to be non-null
 }
-import type { Rating, Snapshot, GeminiAnalysisRequest } from '@catchvoca/types';
+import type { Rating, Snapshot, GeminiAnalysisRequest, WordEntry } from '@catchvoca/types';
 import { lookupWord } from './dictionaryAPI';
 import { saveWord, getWordInfo, incrementWordViewCount } from './wordService';
 import { getSettings, updateSettings } from './storage';
@@ -36,6 +36,7 @@ import { calculateBatchImportance, getRecommendedWords } from './wordImportance'
 import { canUseAI, incrementAIUsage, getAIUsageStats } from './aiUsageManager';
 import { uploadQuizToFirebase } from './firebaseQuizService';
 import { exportAllData, importAllData } from './backupService';
+import { syncService } from './syncService';
 
 // 간단한 로거 (background service worker용)
 const log = {
@@ -158,19 +159,6 @@ export async function handleMessage(
         await handleCalculateWordImportance(message, sendResponse);
         break;
 
-      // PDF & Keyboard 관련 핸들러 (Phase 2-C)
-      case 'PDF_TEXT_SELECTED':
-        await handlePDFTextSelected(message, sendResponse);
-        break;
-
-      case 'QUICK_LOOKUP':
-        await handleQuickLookup(message, sendResponse);
-        break;
-
-      case 'QUICK_SAVE':
-        await handleQuickSave(message, sendResponse);
-        break;
-
       // 모바일 퀴즈 관련 핸들러 (Week 5-6)
       case 'GOOGLE_SIGN_IN':
         await handleGoogleSignIn(sendResponse);
@@ -190,6 +178,27 @@ export async function handleMessage(
 
       case 'GENERATE_MOBILE_QUIZ_LINK':
         await handleGenerateMobileQuizLink(message, sendResponse);
+        break;
+
+      // 온라인 동기화 핸들러 (Phase 3)
+      case 'GET_SYNC_STATUS':
+        await handleGetSyncStatus(sendResponse);
+        break;
+
+      case 'SYNC_LOGIN':
+        await handleSyncLogin(sendResponse);
+        break;
+
+      case 'SYNC_LOGOUT':
+        await handleSyncLogout(sendResponse);
+        break;
+
+      case 'SYNC_NOW':
+        await handleSyncNow(sendResponse);
+        break;
+
+      case 'SYNC_RESET':
+        await handleSyncReset(sendResponse);
         break;
 
       // 백업/복원 관련 핸들러 (Phase 2-D)
@@ -300,9 +309,16 @@ async function handleStartReviewSession(message: any, sendResponse: (response: M
 }
 
 async function handleSubmitReview(message: any, sendResponse: (response: MessageResponse) => void) {
-  await ensureRepositories();
-  const reviewState = await reviewStateRepository!.findByWordId(message.wordId);
-  if (reviewState) {
+  try {
+    await ensureRepositories();
+    const reviewState = await reviewStateRepository!.findByWordId(message.wordId);
+
+    if (!reviewState) {
+      log.warn('ReviewState not found for wordId:', message.wordId);
+      sendResponse({ success: false, error: 'ReviewState를 찾을 수 없습니다.' });
+      return;
+    }
+
     const rating: Rating = message.rating;
 
     const sm2Result = calculateNextReview(
@@ -328,8 +344,15 @@ async function handleSubmitReview(message: any, sendResponse: (response: Message
       rating,
       interval: sm2Result.interval,
     });
+
+    sendResponse({ success: true });
+  } catch (error) {
+    log.error('Submit review error:', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : '평가 제출 중 오류가 발생했습니다.'
+    });
   }
-  sendResponse({ success: true });
 }
 
 async function handleGetSettings(sendResponse: (response: MessageResponse) => void) {
@@ -555,22 +578,11 @@ async function handleAnalyzePageAI(
   sendResponse: (response: MessageResponse) => void
 ): Promise<void> {
   try {
-    // 사용량 확인
+    // 사용량 확인 (항상 허용, 광고 표시 여부만 확인)
     const usageCheck = await canUseAI();
 
-    if (!usageCheck.allowed) {
-      sendResponse({
-        success: false,
-        error: usageCheck.isPro
-          ? 'AI analysis temporarily unavailable'
-          : `Daily limit reached (${usageCheck.remaining} remaining)`,
-        data: {
-          isPro: usageCheck.isPro,
-          remaining: usageCheck.remaining,
-        },
-      });
-      return;
-    }
+    // AI 분석은 항상 허용 (allowed는 항상 true)
+    // showAd가 true면 프론트엔드에서 광고 표시
 
     // Gemini API 호출
     const request: GeminiAnalysisRequest = {
@@ -621,7 +633,12 @@ async function handleAnalyzePageAI(
 
     sendResponse({
       success: true,
-      data: result,
+      data: {
+        ...result,
+        showAd: usageCheck.showAd, // 3회 초과 시 광고 표시 필요
+        usedCount: usageCheck.usedCount,
+        freeLimit: usageCheck.freeLimit,
+      },
     });
   } catch (error) {
     log.error('AI analysis failed', error);
@@ -737,125 +754,6 @@ async function handleCalculateWordImportance(
 }
 
 /**
- * PDF 텍스트 선택 핸들러
- */
-async function handlePDFTextSelected(
-  message: any,
-  sendResponse: (response: MessageResponse) => void
-): Promise<void> {
-  try {
-    const { text, pageInfo } = message.data;
-
-    log.info('PDF text selected', {
-      text: text.substring(0, 50),
-      page: pageInfo.pageNumber,
-      pdfTitle: pageInfo.pdfTitle,
-    });
-
-    // 단어 조회 (일반 텍스트 선택과 동일)
-    const lookupResult = await lookupWord(text);
-    const wordInfo = await getWordInfo(text);
-
-    sendResponse({
-      success: true,
-      data: {
-        ...lookupResult,
-        isSaved: wordInfo.isSaved,
-        wordId: wordInfo.wordId,
-        viewCount: wordInfo.viewCount,
-        pdfPageInfo: pageInfo,
-      },
-    });
-  } catch (error) {
-    log.error('PDF text selection handler error', error);
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : 'PDF selection failed',
-    });
-  }
-}
-
-/**
- * 빠른 조회 핸들러 (Ctrl/Alt + 클릭)
- */
-async function handleQuickLookup(
-  message: any,
-  sendResponse: (response: MessageResponse) => void
-): Promise<void> {
-  try {
-    const { word } = message.data;
-
-    log.info('Quick lookup requested', { word });
-
-    // 단어 조회
-    const lookupResult = await lookupWord(word);
-    const wordInfo = await getWordInfo(word);
-
-    // 조회수 증가
-    if (wordInfo.isSaved) {
-      await incrementWordViewCount(word);
-    }
-
-    sendResponse({
-      success: true,
-      data: {
-        ...lookupResult,
-        isSaved: wordInfo.isSaved,
-        wordId: wordInfo.wordId,
-        viewCount: wordInfo.isSaved ? wordInfo.viewCount + 1 : 0,
-      },
-    });
-  } catch (error) {
-    log.error('Quick lookup handler error', error);
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : 'Quick lookup failed',
-    });
-  }
-}
-
-/**
- * 빠른 저장 핸들러 (Alt + 클릭)
- */
-async function handleQuickSave(
-  message: any,
-  sendResponse: (response: MessageResponse) => void
-): Promise<void> {
-  try {
-    const { word, context, url, sourceTitle } = message.data;
-
-    log.info('Quick save requested', { word });
-
-    // 단어 조회 후 저장
-    const lookupResult = await lookupWord(word);
-
-    const wordData = {
-      word,
-      context: context || word,
-      url: url || '',
-      sourceTitle: sourceTitle || 'Quick Save',
-      definitions: lookupResult.definitions || [],
-      phonetic: lookupResult.phonetic,
-      audioUrl: lookupResult.audioUrl,
-      language: 'en',
-    };
-
-    const result = await saveWord(wordData);
-
-    sendResponse({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    log.error('Quick save handler error', error);
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : 'Quick save failed',
-    });
-  }
-}
-
-/**
  * 모바일 퀴즈 링크 생성 핸들러
  */
 async function handleGenerateMobileQuizLink(
@@ -864,22 +762,25 @@ async function handleGenerateMobileQuizLink(
 ): Promise<void> {
   try {
     await ensureRepositories();
-    // 모든 단어 조회
-    const allWords = await wordRepository!.findAll();
 
-    // 삭제된 단어 제외
-    const activeWords = allWords.filter((word) => !word.deletedAt);
+    // PC 퀴즈와 동일하게 복습 대상 단어만 가져오기
+    const dueReviews = await reviewStateRepository!.findDueReviews(20); // 최대 20개
+    const dueWords = await Promise.all(
+      dueReviews.map((review) => wordRepository!.findById(review.wordId))
+    );
+    // 타입 안전성: null 체크 후 WordEntry 배열로 변환
+    const validDueWords = dueWords.filter((w): w is WordEntry => w !== null);
 
-    if (activeWords.length === 0) {
+    if (validDueWords.length === 0) {
       sendResponse({
         success: false,
-        error: '저장된 단어가 없습니다.',
+        error: '복습할 단어가 없습니다.',
       });
       return;
     }
 
     // Firebase에 업로드
-    const result = await uploadQuizToFirebase(activeWords);
+    const result = await uploadQuizToFirebase(validDueWords);
 
     sendResponse({
       success: true,
@@ -1005,17 +906,17 @@ async function handleGoogleSignOut(sendResponse: (response: MessageResponse) => 
  */
 async function handleGetCurrentUser(sendResponse: (response: MessageResponse) => void): Promise<void> {
   try {
-    const { getCurrentUser } = await import('./firebaseAuthService');
-    const user = await getCurrentUser();
+    // syncService의 사용자 정보를 사용 (chrome.storage.local에 저장되어 있음)
+    const status = syncService.getStatus();
 
-    if (user) {
+    if (status.currentUser) {
       sendResponse({
         success: true,
         data: {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
+          uid: status.currentUser.uid,
+          email: status.currentUser.email,
+          displayName: status.currentUser.displayName,
+          photoURL: status.currentUser.photoURL,
         },
       });
     } else {
@@ -1053,6 +954,117 @@ async function handleSyncFromMobile(
     sendResponse({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to sync from mobile',
+    });
+  }
+}
+
+/**
+ * Get sync status handler
+ */
+async function handleGetSyncStatus(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    log.error('Get sync status handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get sync status',
+    });
+  }
+}
+
+/**
+ * Sync login handler
+ */
+async function handleSyncLogin(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    await syncService.authenticate();
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    log.error('Sync login handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to login',
+    });
+  }
+}
+
+/**
+ * Sync logout handler
+ */
+async function handleSyncLogout(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    await syncService.signOut();
+
+    sendResponse({
+      success: true,
+      data: {
+        isAuthenticated: false,
+        currentUser: null,
+        lastSyncedAt: 0,
+        syncInProgress: false,
+      },
+    });
+  } catch (error) {
+    log.error('Sync logout handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to logout',
+    });
+  }
+}
+
+/**
+ * Sync now handler
+ */
+async function handleSyncNow(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    const syncResult = await syncService.sync();
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: {
+        ...status,
+        syncResult,
+      },
+    });
+  } catch (error) {
+    log.error('Sync now handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to sync',
+    });
+  }
+}
+
+/**
+ * Reset sync timestamp handler
+ */
+async function handleSyncReset(sendResponse: (response: MessageResponse) => void): Promise<void> {
+  try {
+    await syncService.resetLastSyncedAt();
+    const status = syncService.getStatus();
+
+    sendResponse({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    log.error('Sync reset handler error', error);
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to reset sync timestamp',
     });
   }
 }

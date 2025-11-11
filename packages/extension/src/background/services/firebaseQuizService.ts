@@ -5,6 +5,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, remove } from 'firebase/database';
+import { getAuth, signInWithCustomToken } from 'firebase/auth';
 import type { WordEntry } from '@catchvoca/types';
 import { firebaseConfig, FIREBASE_PATHS, QUIZ_EXPIRATION_MS } from '../../config/firebase.config';
 import { createWordRepository, createReviewStateRepository } from '@catchvoca/core';
@@ -34,14 +35,81 @@ async function ensureRepositories() {
  */
 let firebaseApp: ReturnType<typeof initializeApp> | null = null;
 let database: ReturnType<typeof getDatabase> | null = null;
+let auth: ReturnType<typeof getAuth> | null = null;
+let isAuthenticating = false;
 
 function initializeFirebase() {
   if (!firebaseApp) {
     firebaseApp = initializeApp(firebaseConfig);
     database = getDatabase(firebaseApp);
+    auth = getAuth(firebaseApp);
     logger.info('Firebase initialized');
   }
-  return database!;
+  return { db: database!, auth: auth! };
+}
+
+/**
+ * Firebase Auth 인증 (Custom Token 사용)
+ */
+async function ensureAuthenticated(): Promise<void> {
+  const { auth } = initializeFirebase();
+
+  // 이미 로그인되어 있으면 스킵
+  if (auth.currentUser) {
+    logger.info('Already authenticated', { uid: auth.currentUser.uid });
+    return;
+  }
+
+  // 다른 요청이 인증 중이면 대기
+  if (isAuthenticating) {
+    logger.info('Authentication in progress, waiting...');
+
+    // ✅ Promise.race로 타임아웃 또는 성공 대기
+    const waitForAuth = new Promise<void>((resolve, reject) => {
+      const interval = setInterval(() => {
+        if (auth.currentUser) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 100);
+
+      setTimeout(() => {
+        clearInterval(interval);
+        reject(new Error('Authentication timeout'));
+      }, 5000);
+    });
+
+    await waitForAuth;
+    logger.info('Authentication completed by another request');
+    return;
+  }
+
+  isAuthenticating = true;
+
+  try {
+    // syncService에서 customToken 가져오기
+    const { syncService } = await import('./syncService');
+    const status = syncService.getStatus();
+
+    if (!status.isAuthenticated || !status.authToken) {
+      throw new Error('로그인이 필요합니다. 먼저 구글 로그인을 해주세요.');
+    }
+
+    // Firebase Auth에 Custom Token으로 로그인
+    logger.info('Signing in with custom token...', {
+      tokenLength: status.authToken.length,
+      tokenPrefix: status.authToken.substring(0, 20) + '...',
+      userId: status.currentUser?.uid
+    });
+    const userCredential = await signInWithCustomToken(auth, status.authToken);
+    logger.info('Firebase Auth sign-in successful', { uid: userCredential.user.uid });
+  } catch (error) {
+    // ✅ 에러 발생 시 isAuthenticating 즉시 false
+    isAuthenticating = false;
+    throw error;
+  } finally {
+    isAuthenticating = false;
+  }
 }
 
 /**
@@ -84,15 +152,20 @@ export async function uploadQuizToFirebase(
   expiresAt: number;
 }> {
   try {
-    const db = initializeFirebase();
+    // Firebase Auth 인증 확인 및 로그인
+    await ensureAuthenticated();
 
-    // 사용자 로그인 확인
-    const { getUserId } = await import('./firebaseAuthService');
-    const userId = await getUserId();
+    const { db } = initializeFirebase();
 
-    if (!userId) {
+    // 사용자 로그인 확인 (syncService 사용 - chrome.storage.local에서 가져옴)
+    const { syncService } = await import('./syncService');
+    const status = syncService.getStatus();
+
+    if (!status.isAuthenticated || !status.currentUser) {
       throw new Error('로그인이 필요합니다. 먼저 구글 로그인을 해주세요.');
     }
+
+    const userId = status.currentUser.uid;
 
     // 고유 ID 생성
     const quizId = generateQuizId();
@@ -127,9 +200,9 @@ export async function uploadQuizToFirebase(
       expiresAt: new Date(expiresAt).toISOString(),
     });
 
-    // PWA URL 생성
+    // PWA URL 생성 (userId도 포함)
     const pwaUrl = import.meta.env.VITE_PWA_URL || 'https://jinwoonghong.github.io/CatchVoca_quiz/';
-    const fullUrl = `${pwaUrl}?id=${quizId}`;
+    const fullUrl = `${pwaUrl}?id=${quizId}&uid=${userId}`;
 
     return {
       quizId,
@@ -153,7 +226,10 @@ export async function uploadQuizToFirebase(
  */
 export async function downloadQuizFromFirebase(quizId: string): Promise<QuizData | null> {
   try {
-    const db = initializeFirebase();
+    // Firebase Auth 인증 확인 및 로그인
+    await ensureAuthenticated();
+
+    const { db } = initializeFirebase();
 
     const quizRef = ref(db, `${FIREBASE_PATHS.QUIZZES}/${quizId}`);
     const snapshot = await get(quizRef);
@@ -189,6 +265,39 @@ export async function downloadQuizFromFirebase(quizId: string): Promise<QuizData
 }
 
 /**
+ * SM-2 진행도를 비교하여 incoming이 더 나은지 판단
+ * @returns true if incoming is better (should update), false if existing is better (keep existing)
+ */
+function compareSM2Progress(incoming: any, existing: any): boolean {
+  // 1. repetitions가 더 높으면 더 진행된 것
+  if (incoming.repetitions > existing.repetitions) {
+    return true;
+  }
+  if (incoming.repetitions < existing.repetitions) {
+    return false;
+  }
+
+  // 2. repetitions가 같으면 interval이 더 긴 것이 더 진행된 것
+  if (incoming.interval > existing.interval) {
+    return true;
+  }
+  if (incoming.interval < existing.interval) {
+    return false;
+  }
+
+  // 3. interval도 같으면 easeFactor가 더 높은 것이 더 좋음
+  if (incoming.easeFactor > existing.easeFactor) {
+    return true;
+  }
+  if (incoming.easeFactor < existing.easeFactor) {
+    return false;
+  }
+
+  // 4. 모든 값이 같으면 기존 것을 유지 (false)
+  return false;
+}
+
+/**
  * 모바일에서 업데이트된 ReviewState를 PC로 동기화
  * (모바일에서 퀴즈 완료 후 호출)
  */
@@ -196,15 +305,20 @@ export async function syncReviewStatesFromFirebase(quizId: string): Promise<numb
   await ensureRepositories();
 
   try {
-    const db = initializeFirebase();
+    // Firebase Auth 인증 확인 및 로그인
+    await ensureAuthenticated();
+
+    const { db } = initializeFirebase();
 
     // 사용자 로그인 확인
-    const { getUserId } = await import('./firebaseAuthService');
-    const userId = await getUserId();
+    const { syncService } = await import('./syncService');
+    const status = syncService.getStatus();
 
-    if (!userId) {
+    if (!status.isAuthenticated || !status.currentUser) {
       throw new Error('로그인이 필요합니다.');
     }
+
+    const userId = status.currentUser.uid;
 
     // Firebase에서 퀴즈 데이터 가져오기
     const quizRef = ref(db, `users/${userId}/${FIREBASE_PATHS.QUIZZES}/${quizId}`);
@@ -224,15 +338,38 @@ export async function syncReviewStatesFromFirebase(quizId: string): Promise<numb
       return 0;
     }
 
-    // ReviewState 동기화
-    let syncedCount = 0;
+    // Firebase에서 ReviewState 데이터 가져오기
+    const reviewStatesRef = ref(db, `users/${userId}/${FIREBASE_PATHS.QUIZZES}/${quizId}/reviewStates`);
+    const reviewStatesSnapshot = await get(reviewStatesRef);
 
-    for (const word of quizData.words) {
+    if (!reviewStatesSnapshot.exists()) {
+      logger.info('No review states found in Firebase', { quizId });
+      return 0;
+    }
+
+    const firebaseReviewStates = reviewStatesSnapshot.val() as Record<string, any>;
+    logger.info('Fetched review states from Firebase', { count: Object.keys(firebaseReviewStates).length });
+
+    // ReviewState 동기화 및 병합
+    let syncedCount = 0;
+    let mergedCount = 0;
+    let createdCount = 0;
+
+    for (const [wordId, firebaseState] of Object.entries(firebaseReviewStates)) {
+      // wordId 형식: "{normalizedWord}::{quizId}"
+      // normalizedWord 추출
+      const normalizedWord = wordId.split('::')[0];
+
+      if (!normalizedWord) {
+        logger.warn('Invalid wordId format', { wordId });
+        continue;
+      }
+
       // normalizedWord로 WordEntry 찾기
-      const wordEntries = await wordRepository!.findByNormalizedWord(word.w.toLowerCase());
+      const wordEntries = await wordRepository!.findByNormalizedWord(normalizedWord);
 
       if (wordEntries.length === 0) {
-        logger.warn('Word not found for sync', { word: word.w });
+        logger.warn('Word not found for sync', { normalizedWord });
         continue;
       }
 
@@ -242,17 +379,61 @@ export async function syncReviewStatesFromFirebase(quizId: string): Promise<numb
         continue;
       }
 
-      // ReviewState가 있으면 업데이트 확인
+      // 로컬 ReviewState 확인
       const existingReviewState = await reviewStateRepository!.findByWordId(wordEntry.id);
 
-      if (existingReviewState) {
-        // TODO: Firebase에서 ReviewState 데이터를 가져와서 실제로 동기화
-        // 현재는 단순히 카운트만 증가 (Phase 2에서 구현)
+      // Firebase ReviewState를 로컬 형식으로 변환
+      const incomingState = {
+        id: existingReviewState?.id || `${wordEntry.id}::review`,
+        wordId: wordEntry.id,
+        nextReviewAt: firebaseState.nextReviewAt || Date.now(),
+        interval: firebaseState.interval || 1,
+        easeFactor: firebaseState.easeFactor || 2.5,
+        repetitions: firebaseState.repetitions || 0,
+        history: existingReviewState?.history || [],
+      };
+
+      if (!existingReviewState) {
+        // 로컬에 없으면 새로 생성
+        await reviewStateRepository!.create(incomingState);
+        createdCount++;
         syncedCount++;
+        logger.info('Created new ReviewState from Firebase', { wordId: wordEntry.id });
+      } else {
+        // 로컬에 있으면 병합 (더 나은 진도를 유지)
+        const shouldUpdate = compareSM2Progress(incomingState, existingReviewState);
+
+        if (shouldUpdate) {
+          // Firebase 데이터가 더 진행된 경우 업데이트
+          await reviewStateRepository!.update(existingReviewState.id, {
+            nextReviewAt: incomingState.nextReviewAt,
+            interval: incomingState.interval,
+            easeFactor: incomingState.easeFactor,
+            repetitions: incomingState.repetitions,
+          });
+          mergedCount++;
+          syncedCount++;
+          logger.info('Updated ReviewState from Firebase', {
+            wordId: wordEntry.id,
+            oldRepetitions: existingReviewState.repetitions,
+            newRepetitions: incomingState.repetitions,
+          });
+        } else {
+          logger.info('Kept existing ReviewState (better progress)', {
+            wordId: wordEntry.id,
+            localRepetitions: existingReviewState.repetitions,
+            firebaseRepetitions: incomingState.repetitions,
+          });
+        }
       }
     }
 
-    logger.info('Review states synced from mobile', { quizId, syncedCount });
+    logger.info('Review states synced from mobile', {
+      quizId,
+      total: syncedCount,
+      created: createdCount,
+      merged: mergedCount,
+    });
     return syncedCount;
   } catch (error) {
     logger.error('Failed to sync review states from Firebase', error);
@@ -265,7 +446,10 @@ export async function syncReviewStatesFromFirebase(quizId: string): Promise<numb
  */
 export async function cleanupExpiredQuizzes(): Promise<number> {
   try {
-    const db = initializeFirebase();
+    // Firebase Auth 인증 확인 및 로그인
+    await ensureAuthenticated();
+
+    const { db } = initializeFirebase();
 
     const quizzesRef = ref(db, FIREBASE_PATHS.QUIZZES);
     const snapshot = await get(quizzesRef);
